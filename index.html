@@ -2,13 +2,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>GeoCheck</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>GeoCheck - Employee Attendance</title>
 
+  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React & ReactDOM -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Babel (for JSX) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    html { -webkit-tap-highlight-color: transparent; }
+    body { -webkit-font-smoothing: antialiased; }
+  </style>
 </head>
 
 <body class="bg-slate-100 text-slate-800">
@@ -18,13 +28,10 @@
     const { useEffect, useMemo, useState } = React;
 
     // =========================
-    // CONFIG (EDIT THESE 2)
+    //  EMPLOYEE ID LOOKUP TABLE
     // =========================
-    const API_URL = "https://script.google.com/macros/s/AKfycbzDSSV_vLRQEVzayR9nwxXCcavylrrw9cXXJatPrQ-D8U_2oqq7WuNOURpTvbKmTor_9w/exec";
-    const API_SECRET = "ISE_TOKEN";
-
-    // Email -> Employee ID map (frontend display/help; backend also enforces)
-    const EMAIL_TO_ID = {
+    // Key = lowercased email
+    const EMP_EMAIL_TO_ID = {
       "sasiwipa.p@chula.ac.th": "10016090",
       "supaphan.p@chula.ac.th": "10016023",
       "sawarach.s@chula.ac.th": "10025894",
@@ -50,352 +57,1003 @@
       "jirachaya.so@chula.ac.th": "20260108"
     };
 
-    const normEmail = (s) => String(s || "").trim().toLowerCase();
+    // =========================
+    //  SMALL UI HELPERS
+    // =========================
+    const Icon = ({ path, size = 24, className = "" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg"
+        width={size} height={size} viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" strokeWidth="2"
+        strokeLinecap="round" strokeLinejoin="round"
+        className={className}
+      >
+        {path}
+      </svg>
+    );
 
-    // IMPORTANT: no Content-Type header -> avoids CORS preflight
-    async function postApi(payload) {
-      const res = await fetch(API_URL, {
-        method: "POST",
-        body: JSON.stringify({ ...payload, secret: API_SECRET })
-      });
-      const text = await res.text();
-      let data;
-      try { data = JSON.parse(text); } catch { data = { ok: false, error: "Bad JSON: " + text }; }
-      return data;
+    const Icons = {
+      CheckCircle: (p) => <Icon {...p} path={<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>} />,
+      AlertTriangle: (p) => <Icon {...p} path={<><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>} />,
+      Settings: (p) => <Icon {...p} path={<><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></>} />,
+      LogOut: (p) => <Icon {...p} path={<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>} />,
+      MapPin: (p) => <Icon {...p} path={<><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></>} />,
+      Navigation: (p) => <Icon {...p} path={<><polygon points="3 11 22 2 13 21 11 13 3 11"/></>} />,
+      RefreshCw: (p) => <Icon {...p} path={<><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></>} />,
+      X: (p) => <Icon {...p} path={<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>} />,
+      ExternalLink: (p) => <Icon {...p} path={<><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></>} />,
+      BarChart: (p) => <Icon {...p} path={<><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></>} />,
+      User: (p) => <Icon {...p} path={<><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>} />
+    };
+
+    const Card = ({ children, className = "" }) => (
+      <div className={"bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden " + className}>
+        {children}
+      </div>
+    );
+
+    const Button = ({ children, onClick, disabled = false, variant = "primary", className = "", icon }) => {
+      const base = "flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none";
+      const variants = {
+        primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-500/20",
+        success: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-500/20",
+        secondary: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+        danger: "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200",
+        ghost: "bg-transparent text-slate-600 hover:bg-slate-100"
+      };
+      const IconComp = icon ? Icons[icon] : null;
+      return (
+        <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${className}`}>
+          {IconComp && <IconComp size={18} className="mr-2" />}
+          {children}
+        </button>
+      );
+    };
+
+    const Input = ({ label, type="text", value, onChange, placeholder="", required=false, hint="", disabled=false }) => (
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-slate-700 mb-1">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+        <input
+          type={type}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          disabled={disabled}
+          className={`w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${disabled ? "opacity-70" : ""}`}
+        />
+        {hint && <div className="text-xs text-slate-400 mt-1">{hint}</div>}
+      </div>
+    );
+
+    const ProgressBar = ({ label, current, max, dangerWhenOver=false }) => {
+      const pct = max > 0 ? Math.min(100, Math.max(0, (current / max) * 100)) : 0;
+      const over = dangerWhenOver && current > max;
+      return (
+        <div className="mb-4">
+          <div className="flex justify-between text-xs mb-1 font-medium text-slate-600">
+            <span>{label}</span>
+            <span>{current} / {max}</span>
+          </div>
+          <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+            <div
+              className={`h-2.5 rounded-full transition-all duration-500 ${over ? "bg-red-500" : "bg-indigo-600"}`}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+      );
+    };
+
+    // =========================
+    //  GEO UTILS
+    // =========================
+    function calculateDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371e3;
+      const φ1 = lat1 * Math.PI / 180;
+      const φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+        Math.cos(φ1) * Math.cos(φ2) *
+        Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
     }
 
+    function formatTimeHHMM(date) {
+      return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+
+    function formatDateYYYYMMDD(date) {
+      // en-CA gives YYYY-MM-DD in most browsers
+      return date.toLocaleDateString("en-CA");
+    }
+
+    // =========================
+    //  MAIN APP
+    // =========================
     function App() {
       const [toast, setToast] = useState(null);
-      const [currentUser, setCurrentUser] = useState(null);
-      const [authMode, setAuthMode] = useState("login"); // login | register
-      const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
-
-      const [location, setLocation] = useState({ loading: false, coords: null, error: null });
-      const [logs, setLogs] = useState([]);
-
-      const officeLocations = [
-        { name: "ISE_Headquarters", lat: 13.73656068, lng: 100.5333925, radius: 30 },
-        { name: "ChulaPat_14",     lat: 13.74406954, lng: 100.525551,  radius: 30 }
-      ];
-
       const showToast = (msg, type="ok") => {
         setToast({ msg, type });
-        setTimeout(() => setToast(null), 3000);
+        setTimeout(() => setToast(null), 3500);
       };
 
-      const inferredId = useMemo(() => {
-        const e = normEmail(authForm.email);
-        return EMAIL_TO_ID[e] || "";
-      }, [authForm.email]);
+      // -------------------------
+      // Settings (stored)
+      // -------------------------
+      const [showSettings, setShowSettings] = useState(false);
+      const [settings, setSettings] = useState(() => {
+        const saved = localStorage.getItem("geocheck_settings_v1");
+        if (saved) return JSON.parse(saved);
+        return {
+          apiUrl: "https://script.google.com/macros/s/AKfycbxnt9GIsAZSET3psMlj7kT9r_quzTzD4I088HePbGnTvq0EqYx6jsxeYIL-V3Tpp4tkkA/exec",
+          secret: "ISE_TOKEN",
+          configCsvUrl: "https://docs.google.com/spreadsheets/d/1MJr9cfp0FUyKqRZNX9ggM82XOSXPcn5zebjRV6zlePs/export?format=csv",
+          logsSheetUrl: "https://docs.google.com/spreadsheets/d/10Zha7rE54PO4ZxG782t1fk2igFzkOTuQD7B-5Hmdd2w/edit?gid=0#gid=0",
+          startTime: "10:00",
+          maxLateCount: 6,
+          maxLateMinutes: 180,
+          locations: [
+            { name: "ISE_Headquarters", lat: 13.73656068, lng: 100.5333925, radius: 10 },
+            { name: "ChulaPat_14", lat: 13.74406954, lng: 100.525551, radius: 10 }
+          ]
+        };
+      });
 
-      // Ping backend once on load
       useEffect(() => {
-        (async () => {
-          const r = await postApi({ action: "ping" });
-          if (!r.ok) showToast("API not ready: " + (r.error || "unknown"), "err");
-        })();
-      }, []);
+        localStorage.setItem("geocheck_settings_v1", JSON.stringify(settings));
+      }, [settings]);
 
-      const calcDistance = (lat1, lon1, lat2, lon2) => {
-        const R = 6371e3;
-        const toRad = (x) => x * Math.PI / 180;
-        const φ1 = toRad(lat1), φ2 = toRad(lat2);
-        const dφ = toRad(lat2 - lat1);
-        const dλ = toRad(lon2 - lon1);
-        const a = Math.sin(dφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
-        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-      };
+      // -------------------------
+      // API helper
+      // -------------------------
+      async function postApi(payload) {
+        if (!settings.apiUrl) throw new Error("Missing Apps Script URL");
+        // IMPORTANT: do NOT set Content-Type header to avoid CORS preflight issues
+        const res = await fetch(settings.apiUrl, {
+          method: "POST",
+          body: JSON.stringify({ ...payload, secret: settings.secret })
+        });
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); }
+        catch { data = { ok: false, error: "Non-JSON response", raw: text }; }
+        return data;
+      }
 
-      const verifyLocation = () => {
-        if (location.loading) return;
-        if (!navigator.geolocation) {
-          setLocation({ loading:false, coords:null, error:"Geolocation not supported" });
+      // -------------------------
+      // Config CSV loader (optional)
+      // -------------------------
+      const [loadingConfig, setLoadingConfig] = useState(false);
+
+      const fetchConfigFromCsv = async () => {
+        if (!settings.configCsvUrl) {
+          showToast("No Config CSV URL", "err");
           return;
         }
-        setLocation({ loading:true, coords:null, error:null });
+        setLoadingConfig(true);
+        try {
+          const sep = settings.configCsvUrl.includes("?") ? "&" : "?";
+          const url = `${settings.configCsvUrl}${sep}t=${Date.now()}`;
+          const r = await fetch(url);
+          const text = await r.text();
+
+          const rows = text
+            .split("\n")
+            .map(line => line.trim())
+            .filter(line => line.length > 0)
+            .map(line => line.split(",").map(x => x.trim()));
+
+          let startTime = settings.startTime;
+          let maxLateCount = settings.maxLateCount;
+          let maxLateMinutes = settings.maxLateMinutes;
+          const locs = [];
+
+          for (const row of rows) {
+            if (row.length >= 2) {
+              const key = (row[0] || "").toLowerCase();
+              if (key === "starttime") startTime = row[1];
+              else if (key === "maxlatecount") maxLateCount = Number(row[1]) || maxLateCount;
+              else if (key === "maxlateminutes") maxLateMinutes = Number(row[1]) || maxLateMinutes;
+              else if (row.length >= 3) {
+                const lat = parseFloat(row[1]);
+                const lng = parseFloat(row[2]);
+                const rad = row[3] ? (Number(row[3]) || 10) : 10;
+                if (!isNaN(lat) && !isNaN(lng)) {
+                  locs.push({ name: row[0], lat, lng, radius: rad });
+                }
+              }
+            }
+          }
+
+          setSettings(prev => ({
+            ...prev,
+            startTime,
+            maxLateCount,
+            maxLateMinutes,
+            locations: locs.length ? locs : prev.locations
+          }));
+
+          showToast("Config updated from CSV");
+        } catch (e) {
+          showToast("Failed to load Config CSV (check sharing / URL)", "err");
+        } finally {
+          setLoadingConfig(false);
+        }
+      };
+
+      // -------------------------
+      // Auth state
+      // -------------------------
+      const [authMode, setAuthMode] = useState("login"); // login | register
+      const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", id: "" });
+      const [currentUser, setCurrentUser] = useState(() => {
+        const saved = localStorage.getItem("geocheck_user_v1");
+        return saved ? JSON.parse(saved) : null;
+      });
+
+      useEffect(() => {
+        if (currentUser) localStorage.setItem("geocheck_user_v1", JSON.stringify(currentUser));
+        else localStorage.removeItem("geocheck_user_v1");
+      }, [currentUser]);
+
+      // Auto-fill ID based on email
+      useEffect(() => {
+        const email = (authForm.email || "").trim().toLowerCase();
+        const mappedId = EMP_EMAIL_TO_ID[email];
+        if (mappedId) {
+          setAuthForm(prev => ({ ...prev, id: mappedId }));
+        }
+      }, [authForm.email]);
+
+      const isIdAuto = useMemo(() => {
+        const email = (authForm.email || "").trim().toLowerCase();
+        return Boolean(EMP_EMAIL_TO_ID[email]);
+      }, [authForm.email]);
+
+      // -------------------------
+      // Location
+      // -------------------------
+      const [locationStatus, setLocationStatus] = useState({
+        loading: false,
+        error: null,
+        coords: null,
+        matchedLocation: null,
+        distance: null
+      });
+
+      const verifyLocation = () => {
+        if (locationStatus.loading) return;
+        setLocationStatus(prev => ({ ...prev, loading: true, error: null }));
+
+        if (!navigator.geolocation) {
+          setLocationStatus({ loading: false, error: "Geolocation not supported", coords: null, matchedLocation: null, distance: null });
+          return;
+        }
+
         navigator.geolocation.getCurrentPosition(
           (pos) => {
-            setLocation({
-              loading:false,
-              coords: { lat: pos.coords.latitude, lng: pos.coords.longitude },
-              error:null
+            const { latitude, longitude } = pos.coords;
+            let closest = null;
+            let minDist = Infinity;
+
+            settings.locations.forEach(loc => {
+              const d = calculateDistance(latitude, longitude, loc.lat, loc.lng);
+              if (d < minDist) {
+                minDist = d;
+                closest = loc;
+              }
+            });
+
+            setLocationStatus({
+              loading: false,
+              error: null,
+              coords: { lat: latitude, lng: longitude },
+              matchedLocation: closest,
+              distance: Math.round(minDist)
             });
           },
           (err) => {
-            setLocation({ loading:false, coords:null, error:"Location denied / unavailable" });
+            let msg = "Unable to retrieve location";
+            if (err.code === 1) msg = "Please allow location access in your browser settings.";
+            setLocationStatus({ loading: false, error: msg, coords: null, matchedLocation: null, distance: null });
           },
-          { enableHighAccuracy:true, timeout:10000, maximumAge:0 }
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
         );
       };
 
-      const nearestOffice = useMemo(() => {
-        if (!location.coords) return null;
-        let best = null;
-        let bestDist = Infinity;
-        for (const o of officeLocations) {
-          const d = calcDistance(location.coords.lat, location.coords.lng, o.lat, o.lng);
-          if (d < bestDist) { bestDist = d; best = { ...o, distance: Math.round(d) }; }
+      useEffect(() => {
+        if (currentUser && !locationStatus.coords && !locationStatus.loading) {
+          verifyLocation();
         }
-        return best;
-      }, [location.coords]);
+        // eslint-disable-next-line
+      }, [currentUser]);
 
-      const canCheck = useMemo(() => {
-        if (!currentUser?.id) return false;          // must have id
-        if (!nearestOffice) return false;
-        return nearestOffice.distance <= nearestOffice.radius;
-      }, [currentUser, nearestOffice]);
+      // -------------------------
+      // Today status (local marker)
+      // -------------------------
+      const [todayState, setTodayState] = useState(() => {
+        const saved = localStorage.getItem("geocheck_today_v1");
+        return saved ? JSON.parse(saved) : {}; // { [emp_id+date]: { inTime, outTime } }
+      });
 
-      // ---------- AUTH ----------
-      const register = async () => {
+      useEffect(() => {
+        localStorage.setItem("geocheck_today_v1", JSON.stringify(todayState));
+      }, [todayState]);
+
+      const todayKey = useMemo(() => {
+        if (!currentUser?.id) return "";
+        return `${currentUser.id}_${formatDateYYYYMMDD(new Date())}`;
+      }, [currentUser]);
+
+      const todayStatus = useMemo(() => {
+        const row = todayState[todayKey] || {};
+        return {
+          checkedIn: Boolean(row.inTime),
+          checkedOut: Boolean(row.outTime),
+          inTime: row.inTime || null,
+          outTime: row.outTime || null
+        };
+      }, [todayState, todayKey]);
+
+      // -------------------------
+      // Monthly stats (from Sheet via API)
+      // -------------------------
+      const [monthlyStats, setMonthlyStats] = useState({ lateCount: 0, lateMinutes: 0, year: 0, month: 0 });
+      const fetchMonthlyStats = async () => {
+        if (!currentUser?.id) return;
+        try {
+          const now = new Date();
+          const r = await postApi({
+            action: "stats",
+            emp_id: currentUser.id,
+            year: now.getFullYear(),
+            month: now.getMonth() + 1
+          });
+          if (r.ok) {
+            setMonthlyStats({
+              lateCount: r.lateCount || 0,
+              lateMinutes: r.lateMinutes || 0,
+              year: r.year,
+              month: r.month
+            });
+          } else {
+            showToast(r.error || "Failed to load monthly stats", "err");
+          }
+        } catch (e) {
+          showToast("Failed to fetch monthly stats", "err");
+        }
+      };
+
+      useEffect(() => {
+        if (currentUser?.id) {
+          fetchMonthlyStats();
+        }
+        // eslint-disable-next-line
+      }, [currentUser?.id]);
+
+      // -------------------------
+      // Late detection (client)
+      // -------------------------
+      const [lateReason, setLateReason] = useState("");
+
+      const isLateNow = useMemo(() => {
+        const now = new Date();
+        const [sh, sm] = (settings.startTime || "10:00").split(":").map(Number);
+        const ws = new Date(now);
+        ws.setHours(sh, sm, 0, 0);
+        return now > ws;
+      }, [settings.startTime]);
+
+      // -------------------------
+      // Actions: Register/Login/Logout
+      // -------------------------
+      const [loadingAuth, setLoadingAuth] = useState(false);
+
+      const handleRegister = async () => {
         const name = authForm.name.trim();
         const email = authForm.email.trim();
         const password = authForm.password.trim();
+        const id = authForm.id.trim();
 
         if (!name || !email || !password) {
-          showToast("Fill all fields", "err");
+          showToast("Please fill name/email/password", "err");
+          return;
+        }
+        if (!id) {
+          showToast("Employee ID is required (auto-fill from email or type manually)", "err");
           return;
         }
 
-        const r = await postApi({
-          action: "register",
-          name,
-          email,
-          password,
-          id: inferredId // optional; backend also infers
-        });
+        setLoadingAuth(true);
+        try {
+          const r = await postApi({
+            action: "register",
+            id, name, email, password
+          });
 
-        if (!r.ok) {
-          showToast(r.error || "Register failed", "err");
-          return;
+          if (r.ok) {
+            showToast("Account created. Please login.");
+            setAuthMode("login");
+            setAuthForm({ name: "", email: "", password: "", id: "" });
+          } else {
+            showToast(r.error || "Register failed", "err");
+          }
+        } catch (e) {
+          showToast("Register failed (check API URL / secret / deployment)", "err");
+        } finally {
+          setLoadingAuth(false);
         }
-
-        setCurrentUser(r.user);
-        setAuthForm({ name:"", email:"", password:"" });
-        showToast("Registered!");
-        verifyLocation();
       };
 
-      const login = async () => {
+      const handleLogin = async () => {
         const email = authForm.email.trim();
         const password = authForm.password.trim();
-        if (!email || !password) { showToast("Enter email & password", "err"); return; }
-
-        const r = await postApi({ action:"login", email, password });
-        if (!r.ok) { showToast(r.error || "Login failed", "err"); return; }
-
-        setCurrentUser(r.user);
-        setAuthForm({ name:"", email:"", password:"" });
-        showToast("Welcome " + (r.user?.name || ""));
-        verifyLocation();
-
-        if (!r.user?.id) {
-          showToast("Your employee_id is not assigned yet (ask admin)", "err");
-        }
-      };
-
-      const logout = () => {
-        setCurrentUser(null);
-        setLogs([]);
-        setLocation({ loading:false, coords:null, error:null });
-      };
-
-      // ---------- CHECK IN/OUT ----------
-      const doLog = async (eventType) => {
-        if (!currentUser) return;
-
-        if (!currentUser.id) {
-          showToast("No employee_id. Ask admin or use mapped email.", "err");
+        if (!email || !password) {
+          showToast("Please enter email and password", "err");
           return;
         }
 
-        if (!nearestOffice) {
-          showToast("Verify location first", "err");
+        setLoadingAuth(true);
+        try {
+          const r = await postApi({ action: "login", email, password });
+          if (r.ok && r.user) {
+            setCurrentUser(r.user);
+            showToast("Welcome " + (r.user.name || ""));
+            setAuthForm({ name: "", email: "", password: "", id: "" });
+            verifyLocation();
+            setTimeout(fetchMonthlyStats, 250);
+          } else {
+            showToast(r.error || "Invalid email or password", "err");
+          }
+        } catch (e) {
+          showToast("Login failed (check API URL / secret / deployment)", "err");
+        } finally {
+          setLoadingAuth(false);
+        }
+      };
+
+      const handleLogout = () => {
+        if (confirm("Log out?")) {
+          setCurrentUser(null);
+          setLateReason("");
+          setLocationStatus({ loading:false, error:null, coords:null, matchedLocation:null, distance:null });
+          setMonthlyStats({ lateCount:0, lateMinutes:0, year:0, month:0 });
+        }
+      };
+
+      // -------------------------
+      // Check-in / Check-out (save to Sheet)
+      // -------------------------
+      const [saving, setSaving] = useState(false);
+
+      const handleLog = async (eventType) => {
+        if (!currentUser?.id) return;
+
+        if (!locationStatus.coords) {
+          showToast("Please verify location first", "err");
           verifyLocation();
           return;
         }
 
-        if (nearestOffice.distance > nearestOffice.radius) {
-          showToast("Too far from office (" + nearestOffice.name + ")", "err");
+        const closest = locationStatus.matchedLocation;
+        const limit = closest?.radius ?? 10;
+        if (locationStatus.distance > limit) {
+          showToast(`Too far from ${closest?.name || "office"}`, "err");
           return;
         }
 
         const now = new Date();
-        const dateISO = now.toISOString().slice(0,10); // YYYY-MM-DD
-        const timeStr = now.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+        const dateStr = formatDateYYYYMMDD(now);
+        const timeStr = formatTimeHHMM(now);
+
+        // Late calc for IN
+        let lateMinutes = 0;
+        let latecheck = "FALSE";
+        let reason = "-";
+
+        if (eventType === "IN") {
+          const [sh, sm] = (settings.startTime || "10:00").split(":").map(Number);
+          const ws = new Date(now);
+          ws.setHours(sh, sm, 0, 0);
+          if (now > ws) {
+            lateMinutes = Math.floor((now - ws) / 60000);
+            latecheck = "TRUE";
+            reason = (lateReason || "").trim();
+            if (!reason) {
+              showToast("Late reason required for Check-In", "err");
+              return;
+            }
+          }
+        }
 
         const payload = {
           action: "log",
           event: eventType,
           emp_id: currentUser.id,
+          date: dateStr,
           emp_name: currentUser.name,
-          date: dateISO,
-          location: nearestOffice.name,
-          coords: `${location.coords.lat.toFixed(6)}, ${location.coords.lng.toFixed(6)}`,
+          checkin_time: eventType === "IN" ? timeStr : undefined,
+          checkout_time: eventType === "OUT" ? timeStr : undefined,
+          latetime: eventType === "IN" ? lateMinutes : 0,
+          latecheck: eventType === "IN" ? latecheck : "FALSE",
+          reason: eventType === "IN" ? reason : "-",
+          location: closest?.name || "-",
+          coords: `${locationStatus.coords.lat.toFixed(6)}, ${locationStatus.coords.lng.toFixed(6)}`,
           timestamp_id: String(Date.now()),
           timestamp: now.toISOString()
         };
 
-        if (eventType === "IN") {
-          payload.checkin_time = timeStr;
-          payload.latetime = 0;
-          payload.latecheck = "FALSE";
-          payload.reason = "-";
-        } else {
-          payload.checkout_time = timeStr;
-        }
+        setSaving(true);
+        try {
+          const r = await postApi(payload);
+          if (r.ok) {
+            // update local today state
+            setTodayState(prev => {
+              const next = { ...prev };
+              const key = `${currentUser.id}_${dateStr}`;
+              const row = next[key] || {};
+              if (eventType === "IN") row.inTime = timeStr;
+              if (eventType === "OUT") row.outTime = timeStr;
+              next[key] = row;
+              return next;
+            });
 
-        const r = await postApi(payload);
-        if (!r.ok) {
-          showToast(r.error || "Failed to write log", "err");
-          return;
+            showToast(eventType === "IN" ? "Checked IN (saved to sheet)" : "Checked OUT (saved to sheet)");
+            if (eventType === "IN") setLateReason("");
+            fetchMonthlyStats(); // refresh
+          } else {
+            showToast(r.error || "Save failed", "err");
+          }
+        } catch (e) {
+          showToast("Save failed (check API / deployment / permissions)", "err");
+        } finally {
+          setSaving(false);
         }
-
-        // update local UI
-        setLogs(prev => [{ ...payload, local_time: timeStr }, ...prev]);
-        showToast(eventType === "IN" ? "Checked IN (saved to sheet)" : "Checked OUT (saved to sheet)");
       };
 
+      // -------------------------
+      // Settings: Test API
+      // -------------------------
+      const testApi = async () => {
+        try {
+          const r = await postApi({ action: "ping" });
+          if (r.ok) showToast("API OK ✅");
+          else showToast(r.error || "API error", "err");
+        } catch (e) {
+          showToast("API test failed", "err");
+        }
+      };
+
+      // -------------------------
+      // UI
+      // -------------------------
+      const monthLabel = useMemo(() => {
+        if (!monthlyStats.year) return "This Month";
+        return `${monthlyStats.year}-${String(monthlyStats.month).padStart(2,"0")}`;
+      }, [monthlyStats]);
+
       return (
-        <div className="min-h-screen p-4">
+        <div className="min-h-screen bg-slate-100 pb-12">
+          {/* Toast */}
           {toast && (
-            <div className={`fixed top-4 right-4 px-4 py-2 rounded-lg text-white shadow
-              ${toast.type==="err" ? "bg-red-600" : "bg-slate-800"}`}>
+            <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-lg shadow-lg text-white font-medium animate-in slide-in-from-top-5 ${
+              toast.type === "err" ? "bg-red-500" : "bg-slate-900"
+            }`}>
               {toast.msg}
             </div>
           )}
 
-          <div className="max-w-md mx-auto">
-            <div className="text-2xl font-bold mb-4">GeoCheck</div>
-
-            {!currentUser ? (
-              <div className="bg-white rounded-xl border p-4 shadow-sm">
-                <div className="flex gap-2 mb-4">
-                  <button className={`flex-1 py-2 rounded ${authMode==="login"?"bg-blue-600 text-white":"bg-slate-100"}`}
-                    onClick={()=>setAuthMode("login")}>Login</button>
-                  <button className={`flex-1 py-2 rounded ${authMode==="register"?"bg-emerald-600 text-white":"bg-slate-100"}`}
-                    onClick={()=>setAuthMode("register")}>Register</button>
+          {/* Settings Modal */}
+          {showSettings && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <Card className="w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-lg font-bold flex items-center">
+                    <Icons.Settings size={20} className="mr-2" /> App Settings
+                  </h3>
+                  <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600">
+                    <Icons.X size={24} />
+                  </button>
                 </div>
 
-                {authMode==="register" && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded mb-4">
+                  <b>Important:</b> SECRET ใน HTML ต้องตรงกับ SECRET ใน Apps Script ไม่งั้นจะขึ้น <b>Unauthorized</b>
+                </div>
+
+                <Input
+                  label="Apps Script Web App URL"
+                  value={settings.apiUrl}
+                  onChange={e => setSettings(prev => ({ ...prev, apiUrl: e.target.value }))}
+                  placeholder="https://script.google.com/macros/s/....../exec"
+                  required
+                />
+
+                <Input
+                  label="SECRET Token"
+                  value={settings.secret}
+                  onChange={e => setSettings(prev => ({ ...prev, secret: e.target.value }))}
+                  placeholder="Same as Apps Script SECRET"
+                  required
+                />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <Input
+                    label="Start Time (HH:MM)"
+                    value={settings.startTime}
+                    onChange={e => setSettings(prev => ({ ...prev, startTime: e.target.value }))}
+                    placeholder="10:00"
+                  />
+                  <Input
+                    label="Max Late Count (per month)"
+                    value={String(settings.maxLateCount)}
+                    onChange={e => setSettings(prev => ({ ...prev, maxLateCount: Number(e.target.value) || 0 }))}
+                    placeholder="6"
+                  />
+                  <Input
+                    label="Max Late Minutes (per month)"
+                    value={String(settings.maxLateMinutes)}
+                    onChange={e => setSettings(prev => ({ ...prev, maxLateMinutes: Number(e.target.value) || 0 }))}
+                    placeholder="180"
+                  />
+                  <Input
+                    label="Logs Sheet Link (optional)"
+                    value={settings.logsSheetUrl}
+                    onChange={e => setSettings(prev => ({ ...prev, logsSheetUrl: e.target.value }))}
+                    placeholder="https://docs.google.com/spreadsheets/d/.../edit"
+                  />
+                </div>
+
+                <hr className="my-5 border-slate-100" />
+
+                <div className="bg-blue-50 border border-blue-200 text-blue-900 text-sm p-3 rounded mb-3">
+                  Optional: Load office locations & limits from Config CSV
+                </div>
+
+                <Input
+                  label="Config CSV URL (optional)"
+                  value={settings.configCsvUrl}
+                  onChange={e => setSettings(prev => ({ ...prev, configCsvUrl: e.target.value }))}
+                  placeholder="https://docs.google.com/spreadsheets/d/.../export?format=csv"
+                />
+
+                <div className="flex gap-2">
+                  <Button onClick={fetchConfigFromCsv} disabled={loadingConfig} icon="RefreshCw" className="flex-1">
+                    {loadingConfig ? "Loading..." : "Update Config from CSV"}
+                  </Button>
+                  <Button onClick={testApi} variant="secondary" className="flex-1">
+                    Test API (ping)
+                  </Button>
+                </div>
+
+                <div className="text-xs text-slate-400 mt-4">
+                  Tip: หลังแก้ Apps Script ให้ Deploy เวอร์ชันใหม่ทุกครั้ง (New version)
+                </div>
+              </Card>
+            </div>
+          )}
+
+          {/* Header */}
+          <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+            <div className="max-w-md mx-auto px-4 h-16 flex items-center justify-between">
+              <div className="flex items-center font-bold text-lg text-slate-800">
+                <Icons.CheckCircle className="text-blue-600 mr-2" size={24} /> GeoCheck
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="p-2 bg-slate-50 text-slate-500 rounded-full hover:bg-slate-100 transition-colors"
+                  title="Settings"
+                >
+                  <Icons.Settings size={18} />
+                </button>
+
+                {currentUser && (
+                  <button
+                    onClick={handleLogout}
+                    className="p-2 bg-slate-50 text-slate-500 rounded-full hover:bg-red-50 hover:text-red-600 transition-colors"
+                    title="Logout"
+                  >
+                    <Icons.LogOut size={18} />
+                  </button>
+                )}
+              </div>
+            </div>
+          </header>
+
+          {/* Body */}
+          <main className="max-w-md mx-auto px-4 py-6 space-y-6">
+            {/* AUTH */}
+            {!currentUser ? (
+              <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="font-bold text-lg text-slate-800">
+                    {authMode === "login" ? "Employee Login" : "Create Account"}
+                  </div>
+                  <div className="text-xs bg-slate-100 px-2 py-1 rounded">
+                    {authMode === "login" ? "Login" : "Register"}
+                  </div>
+                </div>
+
+                {authMode === "register" && (
                   <>
-                    <label className="text-sm font-medium">Full Name</label>
-                    <input className="w-full border rounded p-2 mb-3"
+                    <Input
+                      label="Full Name"
                       value={authForm.name}
-                      onChange={e=>setAuthForm({...authForm, name:e.target.value})}
-                      placeholder="Full name"
+                      onChange={e => setAuthForm(prev => ({ ...prev, name: e.target.value }))}
+                      placeholder="John Doe"
+                      required
                     />
                   </>
                 )}
 
-                <label className="text-sm font-medium">Email</label>
-                <input className="w-full border rounded p-2 mb-2"
+                <Input
+                  label="Email"
+                  type="email"
                   value={authForm.email}
-                  onChange={e=>setAuthForm({...authForm, email:e.target.value})}
+                  onChange={e => setAuthForm(prev => ({ ...prev, email: e.target.value }))}
                   placeholder="name@chula.ac.th"
+                  required
+                  hint={isIdAuto ? "Employee ID will be auto-filled from this email" : "If not in lookup table, please type Employee ID manually"}
                 />
 
-                {authMode==="register" && (
-                  <div className="text-xs mb-3">
-                    Employee ID (auto):{" "}
-                    <span className="font-mono font-bold">
-                      {inferredId || "(not found in map — admin will assign)"}
-                    </span>
-                  </div>
+                {authMode === "register" && (
+                  <Input
+                    label="Employee ID"
+                    value={authForm.id}
+                    onChange={e => setAuthForm(prev => ({ ...prev, id: e.target.value }))}
+                    placeholder="20260101"
+                    required
+                    disabled={isIdAuto}
+                    hint={isIdAuto ? "Auto-filled" : "Required to check-in/out"}
+                  />
                 )}
 
-                <label className="text-sm font-medium">Password</label>
-                <input className="w-full border rounded p-2 mb-4" type="password"
+                <Input
+                  label="Password"
+                  type="password"
                   value={authForm.password}
-                  onChange={e=>setAuthForm({...authForm, password:e.target.value})}
+                  onChange={e => setAuthForm(prev => ({ ...prev, password: e.target.value }))}
                   placeholder="••••••••"
+                  required
                 />
 
-                {authMode==="login" ? (
-                  <button onClick={login} className="w-full bg-blue-600 text-white rounded-lg py-2 font-medium">
-                    Sign In
-                  </button>
+                {authMode === "login" ? (
+                  <Button onClick={handleLogin} disabled={loadingAuth} className="w-full py-3 text-lg">
+                    {loadingAuth ? "Signing in..." : "Sign In"}
+                  </Button>
                 ) : (
-                  <button onClick={register} className="w-full bg-emerald-600 text-white rounded-lg py-2 font-medium">
-                    Create Account
-                  </button>
+                  <Button onClick={handleRegister} disabled={loadingAuth} variant="success" className="w-full py-3 text-lg">
+                    {loadingAuth ? "Creating..." : "Create Account"}
+                  </Button>
                 )}
-              </div>
+
+                <div className="mt-5 pt-5 border-t border-slate-100 text-center">
+                  <button
+                    onClick={() => {
+                      setAuthMode(authMode === "login" ? "register" : "login");
+                      setAuthForm({ name: "", email: "", password: "", id: "" });
+                    }}
+                    className="text-blue-600 font-medium hover:underline text-sm"
+                  >
+                    {authMode === "login" ? "Register New Employee" : "Back to Login"}
+                  </button>
+                </div>
+
+                <div className="mt-6 text-xs text-slate-400">
+                  If you see <b>Unauthorized</b>: open Settings and make sure SECRET matches Apps Script.
+                </div>
+              </Card>
             ) : (
-              <div className="space-y-4">
-                <div className="bg-white rounded-xl border p-4 shadow-sm flex items-center justify-between">
-                  <div>
-                    <div className="font-semibold">{currentUser.name}</div>
-                    <div className="text-xs text-slate-500">
-                      ID: <span className="font-mono">{currentUser.id || "(missing)"}</span>
-                    </div>
-                    <div className="text-xs text-slate-500">{currentUser.email}</div>
-                  </div>
-                  <button onClick={logout} className="text-sm bg-slate-100 rounded px-3 py-1">Logout</button>
-                </div>
-
-                <div className="bg-white rounded-xl border p-4 shadow-sm">
-                  <div className="font-semibold mb-2">Location</div>
-                  {!location.coords ? (
-                    <>
-                      <button onClick={verifyLocation} className="w-full bg-slate-800 text-white rounded-lg py-2">
-                        {location.loading ? "Locating..." : "Verify Location"}
-                      </button>
-                      {location.error && <div className="text-red-600 text-sm mt-2">{location.error}</div>}
-                    </>
-                  ) : (
-                    <>
-                      <div className="text-sm">
-                        Nearest: <b>{nearestOffice?.name}</b> ({nearestOffice?.distance}m / radius {nearestOffice?.radius}m)
+              <>
+                {/* Profile */}
+                <Card className="p-5">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-sm text-slate-500">Logged in as</div>
+                      <div className="text-xl font-bold flex items-center">
+                        <Icons.User size={18} className="mr-2 text-blue-600" />
+                        {currentUser.name}
                       </div>
-                      <button onClick={verifyLocation} className="text-xs text-blue-600 mt-2 underline">Refresh GPS</button>
-                    </>
-                  )}
-                </div>
-
-                <div className="bg-white rounded-xl border p-4 shadow-sm space-y-2">
-                  <button
-                    onClick={()=>doLog("IN")}
-                    disabled={!canCheck}
-                    className={`w-full rounded-lg py-3 font-bold ${canCheck ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-500"}`}>
-                    CHECK IN (Save to Sheet)
-                  </button>
-                  <button
-                    onClick={()=>doLog("OUT")}
-                    disabled={!canCheck}
-                    className={`w-full rounded-lg py-3 font-bold ${canCheck ? "bg-red-600 text-white" : "bg-slate-200 text-slate-500"}`}>
-                    CHECK OUT (Save to Sheet)
-                  </button>
-
-                  {!currentUser.id && (
-                    <div className="text-xs text-red-600">
-                      Your employee_id is missing. Use a mapped email or ask admin to fill ID in Users sheet.
+                      <div className="text-sm text-slate-500 mt-1">{currentUser.email}</div>
+                      <div className="text-sm mt-1">
+                        <span className="text-slate-500">Employee ID:</span>{" "}
+                        <span className="font-mono font-semibold">{currentUser.id}</span>
+                      </div>
                     </div>
-                  )}
-                </div>
 
-                <div className="bg-white rounded-xl border p-4 shadow-sm">
-                  <div className="font-semibold mb-2">Recent Local Actions</div>
-                  {logs.length === 0 ? (
-                    <div className="text-sm text-slate-500">No actions yet.</div>
+                    {settings.logsSheetUrl && (
+                      <a
+                        href={settings.logsSheetUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs inline-flex items-center text-blue-600 hover:underline"
+                        title="Open Logs Sheet"
+                      >
+                        Open Logs <Icons.ExternalLink size={14} className="ml-1" />
+                      </a>
+                    )}
+                  </div>
+                </Card>
+
+                {/* Monthly Stats */}
+                <Card className="p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-semibold text-slate-800 flex items-center">
+                      <Icons.BarChart size={18} className="mr-2 text-indigo-600" />
+                      Monthly Attendance
+                    </h3>
+                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">{monthLabel}</span>
+                  </div>
+
+                  <ProgressBar
+                    label="Late Occurrences"
+                    current={monthlyStats.lateCount}
+                    max={settings.maxLateCount}
+                    dangerWhenOver={true}
+                  />
+
+                  <ProgressBar
+                    label="Late Minutes"
+                    current={monthlyStats.lateMinutes}
+                    max={settings.maxLateMinutes}
+                    dangerWhenOver={true}
+                  />
+
+                  <div className="text-xs text-slate-400 mt-2 text-center">
+                    Limits: {settings.maxLateCount} times / {settings.maxLateMinutes} minutes per month
+                  </div>
+
+                  <button
+                    onClick={fetchMonthlyStats}
+                    className="mt-3 w-full text-xs text-blue-600 hover:underline"
+                  >
+                    Refresh Stats
+                  </button>
+                </Card>
+
+                {/* Location */}
+                <Card className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="font-semibold flex items-center">
+                      <Icons.MapPin size={18} className="mr-2 text-blue-600" /> Location Check
+                    </div>
+                    {locationStatus.matchedLocation && (
+                      <span className="text-xs font-medium bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                        {locationStatus.matchedLocation.name}
+                      </span>
+                    )}
+                  </div>
+
+                  {!locationStatus.coords ? (
+                    <div className="text-center py-6 bg-slate-50 rounded-lg border border-dashed border-slate-300">
+                      <Button onClick={verifyLocation} disabled={locationStatus.loading} className="mx-auto" icon="Navigation">
+                        {locationStatus.loading ? "Locating..." : "Verify Location"}
+                      </Button>
+                      <p className="text-xs text-slate-400 mt-3">
+                        {locationStatus.loading ? "Asking for permission..." : "GPS permission required."}
+                      </p>
+                      {locationStatus.error && (
+                        <p className="mt-3 text-red-500 text-sm flex items-center justify-center">
+                          <Icons.AlertTriangle size={14} className="mr-1" /> {locationStatus.error}
+                        </p>
+                      )}
+                    </div>
                   ) : (
-                    <div className="space-y-2">
-                      {logs.slice(0,5).map((l, idx)=>(
-                        <div key={idx} className="text-xs bg-slate-50 rounded p-2">
-                          <div><b>{l.event}</b> {l.date} {l.local_time}</div>
-                          <div className="text-slate-500">{l.location} • {l.coords}</div>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg">
+                        <span className="text-sm text-slate-500">Distance</span>
+                        <span className={`font-bold text-lg ${
+                          locationStatus.distance > (locationStatus.matchedLocation?.radius || 10) ? "text-red-600" : "text-green-600"
+                        }`}>
+                          {locationStatus.distance}m
+                        </span>
+                      </div>
+
+                      {locationStatus.distance > (locationStatus.matchedLocation?.radius || 10) ? (
+                        <div className="text-xs text-red-600 bg-red-50 p-2 rounded flex items-start">
+                          <Icons.AlertTriangle size={14} className="mr-1 flex-shrink-0 mt-0.5" />
+                          Too far from {locationStatus.matchedLocation?.name}.
                         </div>
-                      ))}
+                      ) : (
+                        <div className="text-xs text-green-700 bg-green-50 p-2 rounded flex items-center">
+                          <Icons.CheckCircle size={14} className="mr-1" />
+                          Verified: {locationStatus.matchedLocation?.name}.
+                        </div>
+                      )}
+
+                      <button onClick={verifyLocation} className="text-xs text-blue-600 hover:underline w-full text-center">
+                        Refresh GPS
+                      </button>
                     </div>
                   )}
-                </div>
-              </div>
+                </Card>
+
+                {/* Check-in/out */}
+                <Card className="p-5">
+                  {!todayStatus.checkedIn ? (
+                    <>
+                      {isLateNow && (
+                        <div className="mb-4 bg-orange-50 border border-orange-200 rounded-lg p-3">
+                          <div className="text-sm font-semibold text-orange-700 mb-2">
+                            Late Reason <span className="text-red-500">*</span>
+                          </div>
+                          <textarea
+                            className="w-full px-3 py-2 bg-white border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-700 text-sm"
+                            rows="2"
+                            placeholder="Why are you late?"
+                            value={lateReason}
+                            onChange={e => setLateReason(e.target.value)}
+                          />
+                          <div className="text-xs text-orange-700 mt-2">
+                            You are after start time ({settings.startTime}). Reason required.
+                          </div>
+                        </div>
+                      )}
+
+                      <Button
+                        onClick={() => handleLog("IN")}
+                        disabled={saving || !locationStatus.coords}
+                        className="w-full py-4 text-lg shadow-xl shadow-blue-500/20"
+                      >
+                        {saving ? "Saving..." : "SUBMIT CHECK-IN"}
+                      </Button>
+                    </>
+                  ) : !todayStatus.checkedOut ? (
+                    <div className="text-center space-y-4">
+                      <div className="bg-blue-50 text-blue-800 p-4 rounded-lg text-sm">
+                        You checked in at <strong>{todayStatus.inTime}</strong>.<br/>Ready to leave?
+                      </div>
+
+                      <Button
+                        onClick={() => handleLog("OUT")}
+                        disabled={saving || !locationStatus.coords}
+                        variant="danger"
+                        className="w-full py-4 text-lg"
+                      >
+                        {saving ? "Saving..." : "CHECK OUT"}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <div className="inline-block p-3 bg-green-100 text-green-600 rounded-full mb-3">
+                        <Icons.CheckCircle size={32} />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-800">Shift Complete</h3>
+                      <p className="text-slate-500 text-sm">
+                        In: <span className="font-mono">{todayStatus.inTime}</span> &nbsp;|&nbsp;
+                        Out: <span className="font-mono">{todayStatus.outTime}</span>
+                      </p>
+
+                      <button
+                        className="mt-3 text-xs text-blue-600 hover:underline"
+                        onClick={() => {
+                          // allow re-test quickly (optional)
+                          fetchMonthlyStats();
+                          verifyLocation();
+                        }}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                  )}
+                </Card>
+              </>
             )}
-          </div>
+          </main>
+
+          {/* Footer */}
+          <footer className="max-w-md mx-auto px-4 pb-8 text-center text-xs text-slate-400">
+            GeoCheck • Option A (Apps Script API → Google Sheets)
+          </footer>
         </div>
       );
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
   </script>
 </body>
 </html>
