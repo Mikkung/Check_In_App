@@ -23,7 +23,7 @@
     const { useEffect, useMemo, useState } = React;
 
     // ===================== EDIT HERE =====================
-    const API_URL = "https://script.google.com/macros/s/AKfycbxF7mkIOcboFDlLxSEuLFGSoj0lnaESBhY-krzYjXTzLcj0PfQqlg6URLchUpKePhFn/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbxZ-eQr5Zwz1FFihvzdKpzGYSjHd4gt3FGp3aBouf5blyDzcqJBezBioYQz1Of9vKSDkw/exec";
     const SECRET  = "ISE_TOKEN";
     // =====================================================
 
@@ -63,6 +63,17 @@
     const timeHHMM = (d = new Date()) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
     const formatClock = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+    // Get Device ID Function
+    function getDeviceId() {
+      let id = localStorage.getItem("geocheck_device_id");
+      if (!id) {
+        id = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + "_" + Math.random());
+        localStorage.setItem("geocheck_device_id", id);
+      }
+      return id;
+    }
+      
+    
     async function apiPost(payload) {
       const res = await fetch(API_URL, {
         method: "POST",
@@ -266,44 +277,51 @@
       // auth
       const handleRegister = async () => {
         if (!authForm.name || !authForm.email || !authForm.password) {
-          notify("All fields are required", "err");
+          showNotification("All fields are required", "error");
           return;
         }
-        setLoading(true);
-        try {
-          const r = await apiPost({ action:"register", name:authForm.name, email:authForm.email, password:authForm.password });
-          if (!r.ok) throw new Error(r.error || "Register failed");
-
-          // auto login
-          const lr = await apiPost({ action:"login", email:authForm.email, password:authForm.password });
-          if (!lr.ok) throw new Error(lr.error || "Login failed");
-          setCurrentUser(lr.user);
-          setAuthForm({ name:"", email:"", password:"" });
-          notify("Account created & logged in");
-        } catch (e) {
-          notify(e.message, "err");
-        } finally {
-          setLoading(false);
+      
+        const resp = await apiPost({
+          action: "register",
+          name: authForm.name,
+          email: authForm.email,
+          password: authForm.password,
+          device_id: getDeviceId(),
+        });
+      
+        if (!resp.ok) {
+          showNotification(resp.error || "Register failed", "error");
+          return;
         }
+      
+        setCurrentUser(resp.user); // {id,name,email}
+        showNotification("Account created successfully!");
       };
-
+      
       const handleLogin = async () => {
         if (!authForm.email || !authForm.password) {
-          notify("Please enter Email and Password", "err");
+          showNotification("Please enter Email and Password", "error");
           return;
         }
-        setLoading(true);
-        try {
-          const r = await apiPost({ action:"login", email:authForm.email, password:authForm.password });
-          if (!r.ok) throw new Error(r.error || "Login failed");
-          setCurrentUser(r.user);
-          setAuthForm({ name:"", email:"", password:"" });
-          notify(`Welcome, ${r.user.name || ""}`);
-        } catch (e) {
-          notify(e.message, "err");
-        } finally {
-          setLoading(false);
+      
+        const resp = await apiPost({
+          action: "login",
+          email: authForm.email,
+          password: authForm.password,
+          device_id: getDeviceId(),
+        });
+      
+        if (!resp.ok) {
+          if (resp.error_code === "DEVICE_MISMATCH") {
+            showNotification("เปลี่ยนเครื่องแล้ว ต้องให้ Admin approve ก่อน", "error");
+          } else {
+            showNotification(resp.error || "Login failed", "error");
+          }
+          return;
         }
+      
+        setCurrentUser(resp.user);
+        showNotification(`Welcome back, ${resp.user.name}`);
       };
 
       const handleLogout = () => {
@@ -345,6 +363,55 @@
           return;
         }
 
+        const deviceId = getDeviceId();
+        const email = currentUser.email;
+      
+        if (type === "IN") {
+          const resp = await apiPost({
+            action: "log",
+            event: "IN",
+            email,
+            device_id: deviceId,
+            coords: `${locationStatus.coords.lat.toFixed(6)}, ${locationStatus.coords.lng.toFixed(6)}`,
+            location: locationStatus.matchedLocation?.name || "-",
+            reason: isLate ? lateReason : "-",
+            latetime: isLate ? lateMinutes : 0,
+            latecheck: isLate ? "TRUE" : "FALSE",
+          });
+      
+          if (!resp.ok) {
+            showNotification(resp.error || "Check-in failed", "error");
+            return;
+          }
+      
+          // เก็บ session_id ไว้ใช้ตอน OUT
+          localStorage.setItem(`geocheck_session_${email}`, resp.session_id);
+      
+          showNotification("Successfully Checked In!");
+          setLateReason("");
+          return;
+        }
+      
+        // OUT
+        const sessionId = localStorage.getItem(`geocheck_session_${email}`) || "";
+      
+        const resp = await apiPost({
+          action: "log",
+          event: "OUT",
+          email,
+          device_id: deviceId,
+          session_id: sessionId,
+        });
+      
+        if (!resp.ok) {
+          showNotification(resp.error || "Check-out failed", "error");
+          return;
+        }
+      
+        localStorage.removeItem(`geocheck_session_${email}`);
+        showNotification("Successfully Checked Out!");
+      };
+      
         const now = new Date();
         const [sh, sm] = config.startTime.split(":").map(Number);
         const workStart = new Date(now);
