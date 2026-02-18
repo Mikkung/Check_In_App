@@ -5,14 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>GeoCheck - Employee Attendance</title>
 
-  <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- React & ReactDOM -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
-  <!-- Babel (for JSX) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <style>
@@ -27,108 +22,91 @@
   <script type="text/babel">
     const { useEffect, useMemo, useState } = React;
 
-    // =========================
-    //  EMPLOYEE ID LOOKUP TABLE
-    // =========================
-    // Key = lowercased email
-    const EMP_EMAIL_TO_ID = {
-      "sasiwipa.p@chula.ac.th": "10016090",
-      "supaphan.p@chula.ac.th": "10016023",
-      "sawarach.s@chula.ac.th": "10025894",
-      "phachphicha.p@chula.ac.th": "10022498",
-      "supatcharin.n@chula.ac.th": "10023396",
-      "sittipun.w@chula.ac.th": "10016260",
-      "suputtra.d@chula.ac.th": "10016026",
-      "pamigar.m@chula.ac.th": "10024408",
-      "fonthong.t@chula.ac.th": "10024107",
-      "panyata.s@chula.ac.th": "10023738",
-      "punsita.b@chula.ac.th": "10024402",
-      "jirasaya.c@chula.ac.th": "10024112",
-      "nattanan.s@chula.ac.th": "10024839",
-      "waranya.ph@chula.ac.th": "10024837",
-      "thanatpong.t@chula.ac.th": "10025137",
-      "napassorn.p@chula.ac.th": "10025895",
-      "thanaphon.a@chula.ac.th": "20260101",
-      "thosaphol.t@chula.ac.th": "20260102",
-      "nat.s@chula.ac.th": "20260103",
-      "dolaporn.a@chula.ac.th": "20260104",
-      "nichayanuch.l@chula.ac.th": "20260105",
-      "weetima.w@chula.ac.th": "20260106",
-      "jirachaya.so@chula.ac.th": "20260108"
-    };
+    // ===================== EDIT HERE =====================
+    const API_URL = "https://script.google.com/macros/s/AKfycbyge_2O3cvFDB_4mLYXRNg6D0TnquxdlDG5IeGxaNo4Bci8okhssZ7Qqy-tKwoXmrxTHQ/exec";
+    const SECRET  = "ISE_TOKEN";
+    // =====================================================
 
-    // =========================
-    //  SMALL UI HELPERS
-    // =========================
+    // --- Icons ---
     const Icon = ({ path, size = 24, className = "" }) => (
-      <svg xmlns="http://www.w3.org/2000/svg"
-        width={size} height={size} viewBox="0 0 24 24"
-        fill="none" stroke="currentColor" strokeWidth="2"
-        strokeLinecap="round" strokeLinejoin="round"
-        className={className}
-      >
+      <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
         {path}
       </svg>
     );
 
     const Icons = {
+      MapPin: (p) => <Icon {...p} path={<><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></>} />,
       CheckCircle: (p) => <Icon {...p} path={<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>} />,
       AlertTriangle: (p) => <Icon {...p} path={<><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>} />,
-      Settings: (p) => <Icon {...p} path={<><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></>} />,
-      LogOut: (p) => <Icon {...p} path={<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>} />,
-      MapPin: (p) => <Icon {...p} path={<><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></>} />,
       Navigation: (p) => <Icon {...p} path={<><polygon points="3 11 22 2 13 21 11 13 3 11"/></>} />,
-      RefreshCw: (p) => <Icon {...p} path={<><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></>} />,
-      X: (p) => <Icon {...p} path={<><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>} />,
-      ExternalLink: (p) => <Icon {...p} path={<><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></>} />,
+      LogOut: (p) => <Icon {...p} path={<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>} />,
+      LogIn: (p) => <Icon {...p} path={<><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></>} />,
+      UserPlus: (p) => <Icon {...p} path={<><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></>} />,
       BarChart: (p) => <Icon {...p} path={<><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></>} />,
-      User: (p) => <Icon {...p} path={<><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>} />
     };
 
-    const Card = ({ children, className = "" }) => (
-      <div className={"bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden " + className}>
-        {children}
-      </div>
+    // --- Utils ---
+    const calculateDistance = (lat1, lon1, lat2, lon2) => {
+      const R = 6371e3;
+      const φ1 = lat1 * Math.PI / 180;
+      const φ2 = lat2 * Math.PI / 180;
+      const Δφ = (lat2 - lat1) * Math.PI / 180;
+      const Δλ = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(Δφ/2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2) ** 2;
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    };
+
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const dateKey = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; // yyyy-MM-dd
+    const timeHHMM = (d = new Date()) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    const formatClock = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    async function apiPost(payload) {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...payload, secret: SECRET }),
+      });
+      const text = await res.text();
+      let data;
+      try { data = JSON.parse(text); } catch { data = { ok:false, error:"Invalid JSON from server", raw:text }; }
+      return data;
+    }
+
+    // --- UI Components ---
+    const Button = ({ children, onClick, variant='primary', disabled=false, className='' }) => {
+      const base = "w-full flex items-center justify-center px-4 py-3 rounded-lg font-semibold transition active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none";
+      const variants = {
+        primary: "bg-blue-600 text-white hover:bg-blue-700",
+        success: "bg-emerald-600 text-white hover:bg-emerald-700",
+        danger: "bg-red-600 text-white hover:bg-red-700",
+        ghost: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+      };
+      return <button className={`${base} ${variants[variant]} ${className}`} onClick={onClick} disabled={disabled}>{children}</button>;
+    };
+
+    const Card = ({ children, className='' }) => (
+      <div className={`bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden ${className}`}>{children}</div>
     );
 
-    const Button = ({ children, onClick, disabled = false, variant = "primary", className = "", icon }) => {
-      const base = "flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none";
-      const variants = {
-        primary: "bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-500/20",
-        success: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md shadow-emerald-500/20",
-        secondary: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
-        danger: "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200",
-        ghost: "bg-transparent text-slate-600 hover:bg-slate-100"
-      };
-      const IconComp = icon ? Icons[icon] : null;
-      return (
-        <button onClick={onClick} disabled={disabled} className={`${base} ${variants[variant]} ${className}`}>
-          {IconComp && <IconComp size={18} className="mr-2" />}
-          {children}
-        </button>
-      );
-    };
-
-    const Input = ({ label, type="text", value, onChange, placeholder="", required=false, hint="", disabled=false }) => (
+    const Input = ({ label, type="text", value, onChange, placeholder }) => (
       <div className="mb-4">
-        <label className="block text-sm font-medium text-slate-700 mb-1">
-          {label} {required && <span className="text-red-500">*</span>}
-        </label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
         <input
           type={type}
           value={value}
           onChange={onChange}
           placeholder={placeholder}
-          disabled={disabled}
-          className={`w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${disabled ? "opacity-70" : ""}`}
+          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        {hint && <div className="text-xs text-slate-400 mt-1">{hint}</div>}
       </div>
     );
 
-    const ProgressBar = ({ label, current, max, dangerWhenOver=false }) => {
-      const pct = max > 0 ? Math.min(100, Math.max(0, (current / max) * 100)) : 0;
-      const over = dangerWhenOver && current > max;
+    const ProgressBar = ({ current, max, label }) => {
+      const pct = Math.min(100, Math.max(0, (max ? (current/max)*100 : 0)));
+      const danger = current > max;
       return (
         <div className="mb-4">
           <div className="flex justify-between text-xs mb-1 font-medium text-slate-600">
@@ -136,200 +114,85 @@
             <span>{current} / {max}</span>
           </div>
           <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-            <div
-              className={`h-2.5 rounded-full transition-all duration-500 ${over ? "bg-red-500" : "bg-indigo-600"}`}
-              style={{ width: `${pct}%` }}
-            />
+            <div className={`h-2.5 rounded-full transition-all duration-500 ${danger ? "bg-red-500" : "bg-indigo-500"}`} style={{ width: `${pct}%` }} />
           </div>
         </div>
       );
     };
 
-    // =========================
-    //  GEO UTILS
-    // =========================
-    function calculateDistance(lat1, lon1, lat2, lon2) {
-      const R = 6371e3;
-      const φ1 = lat1 * Math.PI / 180;
-      const φ2 = lat2 * Math.PI / 180;
-      const Δφ = (lat2 - lat1) * Math.PI / 180;
-      const Δλ = (lon2 - lon1) * Math.PI / 180;
-      const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-        Math.cos(φ1) * Math.cos(φ2) *
-        Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
-    }
-
-    function formatTimeHHMM(date) {
-      return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
-    }
-
-    function formatDateYYYYMMDD(date) {
-      // en-CA gives YYYY-MM-DD in most browsers
-      return date.toLocaleDateString("en-CA");
-    }
-
-    // =========================
-    //  MAIN APP
-    // =========================
+    // ===================== APP =====================
     function App() {
+      const [loading, setLoading] = useState(false);
       const [toast, setToast] = useState(null);
-      const showToast = (msg, type="ok") => {
+
+      const [currentUser, setCurrentUser] = useState(null);
+      const [authMode, setAuthMode] = useState("login"); // login|register
+
+      const [authForm, setAuthForm] = useState({ name:"", email:"", password:"" });
+      const [lateReason, setLateReason] = useState("");
+
+      // config
+      const [config] = useState({
+        startTime: "10:00",
+        maxLateCount: 6,
+        maxLateMinutes: 180,
+        locations: [
+          { name: "ISE_Headquarters", lat: 13.73656068, lng: 100.5333925, radius: 10 },
+          { name: "ChulaPat_14",      lat: 13.74406954, lng: 100.525551,  radius: 10 },
+        ],
+      });
+
+      const [locationStatus, setLocationStatus] = useState({
+        coords: null, matchedLocation: null, distance: null, error: null, loading: false
+      });
+
+      const [logs, setLogs] = useState([]);
+      const [clock, setClock] = useState(new Date());
+
+      const notify = (msg, type="ok") => {
         setToast({ msg, type });
-        setTimeout(() => setToast(null), 3500);
+        setTimeout(() => setToast(null), 3000);
       };
 
-      // -------------------------
-      // Settings (stored)
-      // -------------------------
-      const [showSettings, setShowSettings] = useState(false);
-      const [settings, setSettings] = useState(() => {
-        const saved = localStorage.getItem("geocheck_settings_v1");
-        if (saved) return JSON.parse(saved);
-        return {
-          apiUrl: "https://script.google.com/macros/s/AKfycbxnt9GIsAZSET3psMlj7kT9r_quzTzD4I088HePbGnTvq0EqYx6jsxeYIL-V3Tpp4tkkA/exec",
-          secret: "ISE_TOKEN",
-          configCsvUrl: "https://docs.google.com/spreadsheets/d/1MJr9cfp0FUyKqRZNX9ggM82XOSXPcn5zebjRV6zlePs/export?format=csv",
-          logsSheetUrl: "https://docs.google.com/spreadsheets/d/10Zha7rE54PO4ZxG782t1fk2igFzkOTuQD7B-5Hmdd2w/edit?gid=0#gid=0",
-          startTime: "10:00",
-          maxLateCount: 6,
-          maxLateMinutes: 180,
-          locations: [
-            { name: "ISE_Headquarters", lat: 13.73656068, lng: 100.5333925, radius: 10 },
-            { name: "ChulaPat_14", lat: 13.74406954, lng: 100.525551, radius: 10 }
-          ]
-        };
-      });
-
+      // load session
       useEffect(() => {
-        localStorage.setItem("geocheck_settings_v1", JSON.stringify(settings));
-      }, [settings]);
-
-      // -------------------------
-      // API helper
-      // -------------------------
-      async function postApi(payload) {
-        if (!settings.apiUrl) throw new Error("Missing Apps Script URL");
-        // IMPORTANT: do NOT set Content-Type header to avoid CORS preflight issues
-        const res = await fetch(settings.apiUrl, {
-          method: "POST",
-          body: JSON.stringify({ ...payload, secret: settings.secret })
-        });
-        const text = await res.text();
-        let data;
-        try { data = JSON.parse(text); }
-        catch { data = { ok: false, error: "Non-JSON response", raw: text }; }
-        return data;
-      }
-
-      // -------------------------
-      // Config CSV loader (optional)
-      // -------------------------
-      const [loadingConfig, setLoadingConfig] = useState(false);
-
-      const fetchConfigFromCsv = async () => {
-        if (!settings.configCsvUrl) {
-          showToast("No Config CSV URL", "err");
-          return;
-        }
-        setLoadingConfig(true);
-        try {
-          const sep = settings.configCsvUrl.includes("?") ? "&" : "?";
-          const url = `${settings.configCsvUrl}${sep}t=${Date.now()}`;
-          const r = await fetch(url);
-          const text = await r.text();
-
-          const rows = text
-            .split("\n")
-            .map(line => line.trim())
-            .filter(line => line.length > 0)
-            .map(line => line.split(",").map(x => x.trim()));
-
-          let startTime = settings.startTime;
-          let maxLateCount = settings.maxLateCount;
-          let maxLateMinutes = settings.maxLateMinutes;
-          const locs = [];
-
-          for (const row of rows) {
-            if (row.length >= 2) {
-              const key = (row[0] || "").toLowerCase();
-              if (key === "starttime") startTime = row[1];
-              else if (key === "maxlatecount") maxLateCount = Number(row[1]) || maxLateCount;
-              else if (key === "maxlateminutes") maxLateMinutes = Number(row[1]) || maxLateMinutes;
-              else if (row.length >= 3) {
-                const lat = parseFloat(row[1]);
-                const lng = parseFloat(row[2]);
-                const rad = row[3] ? (Number(row[3]) || 10) : 10;
-                if (!isNaN(lat) && !isNaN(lng)) {
-                  locs.push({ name: row[0], lat, lng, radius: rad });
-                }
-              }
-            }
-          }
-
-          setSettings(prev => ({
-            ...prev,
-            startTime,
-            maxLateCount,
-            maxLateMinutes,
-            locations: locs.length ? locs : prev.locations
-          }));
-
-          showToast("Config updated from CSV");
-        } catch (e) {
-          showToast("Failed to load Config CSV (check sharing / URL)", "err");
-        } finally {
-          setLoadingConfig(false);
-        }
-      };
-
-      // -------------------------
-      // Auth state
-      // -------------------------
-      const [authMode, setAuthMode] = useState("login"); // login | register
-      const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", id: "" });
-      const [currentUser, setCurrentUser] = useState(() => {
         const saved = localStorage.getItem("geocheck_user_v1");
-        return saved ? JSON.parse(saved) : null;
-      });
+        if (saved) {
+          try { setCurrentUser(JSON.parse(saved)); } catch {}
+        }
+      }, []);
 
       useEffect(() => {
         if (currentUser) localStorage.setItem("geocheck_user_v1", JSON.stringify(currentUser));
         else localStorage.removeItem("geocheck_user_v1");
       }, [currentUser]);
 
-      // Auto-fill ID based on email
+      // clock tick
       useEffect(() => {
-        const email = (authForm.email || "").trim().toLowerCase();
-        const mappedId = EMP_EMAIL_TO_ID[email];
-        if (mappedId) {
-          setAuthForm(prev => ({ ...prev, id: mappedId }));
+        const t = setInterval(() => setClock(new Date()), 1000);
+        return () => clearInterval(t);
+      }, []);
+
+      // fetch logs after login
+      const refreshLogs = async (emp_id) => {
+        const r = await apiPost({ action:"fetchLogs", emp_id });
+        if (!r.ok) throw new Error(r.error || "fetchLogs failed");
+        setLogs(r.logs || []);
+      };
+
+      useEffect(() => {
+        if (currentUser?.id) {
+          refreshLogs(currentUser.id).catch(err => notify(err.message, "err"));
         }
-      }, [authForm.email]);
+      }, [currentUser?.id]);
 
-      const isIdAuto = useMemo(() => {
-        const email = (authForm.email || "").trim().toLowerCase();
-        return Boolean(EMP_EMAIL_TO_ID[email]);
-      }, [authForm.email]);
-
-      // -------------------------
-      // Location
-      // -------------------------
-      const [locationStatus, setLocationStatus] = useState({
-        loading: false,
-        error: null,
-        coords: null,
-        matchedLocation: null,
-        distance: null
-      });
-
-      const verifyLocation = () => {
+      // geolocation
+      const getLocation = () => {
         if (locationStatus.loading) return;
-        setLocationStatus(prev => ({ ...prev, loading: true, error: null }));
+        setLocationStatus(s => ({ ...s, loading:true, error:null }));
 
         if (!navigator.geolocation) {
-          setLocationStatus({ loading: false, error: "Geolocation not supported", coords: null, matchedLocation: null, distance: null });
+          setLocationStatus({ loading:false, error:"Geolocation not supported", coords:null, matchedLocation:null, distance:null });
           return;
         }
 
@@ -337,591 +200,366 @@
           (pos) => {
             const { latitude, longitude } = pos.coords;
             let closest = null;
-            let minDist = Infinity;
+            let minD = Infinity;
 
-            settings.locations.forEach(loc => {
+            config.locations.forEach(loc => {
               const d = calculateDistance(latitude, longitude, loc.lat, loc.lng);
-              if (d < minDist) {
-                minDist = d;
-                closest = loc;
-              }
+              if (d < minD) { minD = d; closest = loc; }
             });
 
             setLocationStatus({
-              loading: false,
-              error: null,
-              coords: { lat: latitude, lng: longitude },
+              loading:false,
+              coords:{ lat: latitude, lng: longitude },
               matchedLocation: closest,
-              distance: Math.round(minDist)
+              distance: Math.round(minD),
+              error:null
             });
           },
           (err) => {
-            let msg = "Unable to retrieve location";
-            if (err.code === 1) msg = "Please allow location access in your browser settings.";
-            setLocationStatus({ loading: false, error: msg, coords: null, matchedLocation: null, distance: null });
+            const msg = err.code === 1 ? "Please allow location access in browser settings." : "Unable to retrieve location";
+            setLocationStatus({ loading:false, error: msg, coords:null, matchedLocation:null, distance:null });
           },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          { enableHighAccuracy:true, timeout:10000, maximumAge:0 }
         );
       };
 
       useEffect(() => {
-        if (currentUser && !locationStatus.coords && !locationStatus.loading) {
-          verifyLocation();
-        }
-        // eslint-disable-next-line
+        if (currentUser && !locationStatus.coords && !locationStatus.loading) getLocation();
       }, [currentUser]);
 
-      // -------------------------
-      // Today status (local marker)
-      // -------------------------
-      const [todayState, setTodayState] = useState(() => {
-        const saved = localStorage.getItem("geocheck_today_v1");
-        return saved ? JSON.parse(saved) : {}; // { [emp_id+date]: { inTime, outTime } }
-      });
+      // derived: today row
+      const todayKey = dateKey(new Date());
+      const todayRow = useMemo(() => logs.find(r => r.date === todayKey) || null, [logs, todayKey]);
 
-      useEffect(() => {
-        localStorage.setItem("geocheck_today_v1", JSON.stringify(todayState));
-      }, [todayState]);
-
-      const todayKey = useMemo(() => {
-        if (!currentUser?.id) return "";
-        return `${currentUser.id}_${formatDateYYYYMMDD(new Date())}`;
-      }, [currentUser]);
-
-      const todayStatus = useMemo(() => {
-        const row = todayState[todayKey] || {};
+      const status = useMemo(() => {
+        const checkedIn  = !!(todayRow && todayRow.checkin_time && todayRow.checkin_time !== "-");
+        const checkedOut = !!(todayRow && todayRow.checkout_time && todayRow.checkout_time !== "-");
         return {
-          checkedIn: Boolean(row.inTime),
-          checkedOut: Boolean(row.outTime),
-          inTime: row.inTime || null,
-          outTime: row.outTime || null
+          checkedIn,
+          checkedOut,
+          checkInTime: todayRow?.checkin_time || null,
+          checkOutTime: todayRow?.checkout_time || null,
         };
-      }, [todayState, todayKey]);
+      }, [todayRow]);
 
-      // -------------------------
-      // Monthly stats (from Sheet via API)
-      // -------------------------
-      const [monthlyStats, setMonthlyStats] = useState({ lateCount: 0, lateMinutes: 0, year: 0, month: 0 });
-      const fetchMonthlyStats = async () => {
-        if (!currentUser?.id) return;
-        try {
-          const now = new Date();
-          const r = await postApi({
-            action: "stats",
-            emp_id: currentUser.id,
-            year: now.getFullYear(),
-            month: now.getMonth() + 1
-          });
-          if (r.ok) {
-            setMonthlyStats({
-              lateCount: r.lateCount || 0,
-              lateMinutes: r.lateMinutes || 0,
-              year: r.year,
-              month: r.month
-            });
-          } else {
-            showToast(r.error || "Failed to load monthly stats", "err");
-          }
-        } catch (e) {
-          showToast("Failed to fetch monthly stats", "err");
-        }
-      };
-
-      useEffect(() => {
-        if (currentUser?.id) {
-          fetchMonthlyStats();
-        }
-        // eslint-disable-next-line
-      }, [currentUser?.id]);
-
-      // -------------------------
-      // Late detection (client)
-      // -------------------------
-      const [lateReason, setLateReason] = useState("");
-
-      const isLateNow = useMemo(() => {
+      // monthly stats
+      const monthlyStats = useMemo(() => {
+        if (!currentUser?.id) return { lateCount:0, lateMinutes:0 };
         const now = new Date();
-        const [sh, sm] = (settings.startTime || "10:00").split(":").map(Number);
-        const ws = new Date(now);
-        ws.setHours(sh, sm, 0, 0);
-        return now > ws;
-      }, [settings.startTime]);
+        const ym = `${now.getFullYear()}-${pad2(now.getMonth()+1)}`;
+        let cnt = 0, mins = 0;
 
-      // -------------------------
-      // Actions: Register/Login/Logout
-      // -------------------------
-      const [loadingAuth, setLoadingAuth] = useState(false);
-
-      const handleRegister = async () => {
-        const name = authForm.name.trim();
-        const email = authForm.email.trim();
-        const password = authForm.password.trim();
-        const id = authForm.id.trim();
-
-        if (!name || !email || !password) {
-          showToast("Please fill name/email/password", "err");
-          return;
-        }
-        if (!id) {
-          showToast("Employee ID is required (auto-fill from email or type manually)", "err");
-          return;
-        }
-
-        setLoadingAuth(true);
-        try {
-          const r = await postApi({
-            action: "register",
-            id, name, email, password
-          });
-
-          if (r.ok) {
-            showToast("Account created. Please login.");
-            setAuthMode("login");
-            setAuthForm({ name: "", email: "", password: "", id: "" });
-          } else {
-            showToast(r.error || "Register failed", "err");
+        logs.forEach(r => {
+          if (r.emp_id !== currentUser.id) return;
+          if (!String(r.date || "").startsWith(ym)) return;
+          const isLate = String(r.latecheck || "").toUpperCase() === "TRUE" || Number(r.latetime || 0) > 0;
+          if (isLate) {
+            cnt += 1;
+            mins += Number(r.latetime || 0);
           }
+        });
+
+        return { lateCount: cnt, lateMinutes: mins };
+      }, [logs, currentUser?.id]);
+
+      // auth
+      const handleRegister = async () => {
+        if (!authForm.name || !authForm.email || !authForm.password) {
+          notify("All fields are required", "err");
+          return;
+        }
+        setLoading(true);
+        try {
+          const r = await apiPost({ action:"register", name:authForm.name, email:authForm.email, password:authForm.password });
+          if (!r.ok) throw new Error(r.error || "Register failed");
+
+          // auto login
+          const lr = await apiPost({ action:"login", email:authForm.email, password:authForm.password });
+          if (!lr.ok) throw new Error(lr.error || "Login failed");
+          setCurrentUser(lr.user);
+          setAuthForm({ name:"", email:"", password:"" });
+          notify("Account created & logged in");
         } catch (e) {
-          showToast("Register failed (check API URL / secret / deployment)", "err");
+          notify(e.message, "err");
         } finally {
-          setLoadingAuth(false);
+          setLoading(false);
         }
       };
 
       const handleLogin = async () => {
-        const email = authForm.email.trim();
-        const password = authForm.password.trim();
-        if (!email || !password) {
-          showToast("Please enter email and password", "err");
+        if (!authForm.email || !authForm.password) {
+          notify("Please enter Email and Password", "err");
           return;
         }
-
-        setLoadingAuth(true);
+        setLoading(true);
         try {
-          const r = await postApi({ action: "login", email, password });
-          if (r.ok && r.user) {
-            setCurrentUser(r.user);
-            showToast("Welcome " + (r.user.name || ""));
-            setAuthForm({ name: "", email: "", password: "", id: "" });
-            verifyLocation();
-            setTimeout(fetchMonthlyStats, 250);
-          } else {
-            showToast(r.error || "Invalid email or password", "err");
-          }
+          const r = await apiPost({ action:"login", email:authForm.email, password:authForm.password });
+          if (!r.ok) throw new Error(r.error || "Login failed");
+          setCurrentUser(r.user);
+          setAuthForm({ name:"", email:"", password:"" });
+          notify(`Welcome, ${r.user.name || ""}`);
         } catch (e) {
-          showToast("Login failed (check API URL / secret / deployment)", "err");
+          notify(e.message, "err");
         } finally {
-          setLoadingAuth(false);
+          setLoading(false);
         }
       };
 
       const handleLogout = () => {
         if (confirm("Log out?")) {
           setCurrentUser(null);
+          setLogs([]);
           setLateReason("");
-          setLocationStatus({ loading:false, error:null, coords:null, matchedLocation:null, distance:null });
-          setMonthlyStats({ lateCount:0, lateMinutes:0, year:0, month:0 });
+          setLocationStatus({ coords:null, matchedLocation:null, distance:null, error:null, loading:false });
         }
       };
 
-      // -------------------------
-      // Check-in / Check-out (save to Sheet)
-      // -------------------------
-      const [saving, setSaving] = useState(false);
-
-      const handleLog = async (eventType) => {
-        if (!currentUser?.id) return;
+      // check-in/out
+      const handleAction = async (eventType) => {
+        if (!currentUser?.id) { notify("No user", "err"); return; }
 
         if (!locationStatus.coords) {
-          showToast("Please verify location first", "err");
-          verifyLocation();
+          notify("Please verify your location first", "err");
+          getLocation();
           return;
         }
 
-        const closest = locationStatus.matchedLocation;
-        const limit = closest?.radius ?? 10;
+        const limit = locationStatus.matchedLocation?.radius || 10;
         if (locationStatus.distance > limit) {
-          showToast(`Too far from ${closest?.name || "office"}`, "err");
+          notify(`Too far from ${locationStatus.matchedLocation?.name || "office"}`, "err");
+          return;
+        }
+
+        // guard
+        if (eventType === "IN" && status.checkedIn && !status.checkedOut) {
+          notify("Already checked in today", "err");
+          return;
+        }
+        if (eventType === "OUT" && !status.checkedIn) {
+          notify("No check-in found for today", "err");
+          return;
+        }
+        if (eventType === "OUT" && status.checkedOut) {
+          notify("Already checked out today", "err");
           return;
         }
 
         const now = new Date();
-        const dateStr = formatDateYYYYMMDD(now);
-        const timeStr = formatTimeHHMM(now);
+        const [sh, sm] = config.startTime.split(":").map(Number);
+        const workStart = new Date(now);
+        workStart.setHours(sh, sm, 0, 0);
 
-        // Late calc for IN
+        let isLate = false;
         let lateMinutes = 0;
-        let latecheck = "FALSE";
-        let reason = "-";
 
         if (eventType === "IN") {
-          const [sh, sm] = (settings.startTime || "10:00").split(":").map(Number);
-          const ws = new Date(now);
-          ws.setHours(sh, sm, 0, 0);
-          if (now > ws) {
-            lateMinutes = Math.floor((now - ws) / 60000);
-            latecheck = "TRUE";
-            reason = (lateReason || "").trim();
-            if (!reason) {
-              showToast("Late reason required for Check-In", "err");
-              return;
-            }
+          if (now > workStart) {
+            isLate = true;
+            lateMinutes = Math.floor((now - workStart) / 60000);
+          }
+          if (isLate && !lateReason.trim()) {
+            notify("Late reason required for Check-In", "err");
+            return;
           }
         }
 
-        const payload = {
-          action: "log",
-          event: eventType,
-          emp_id: currentUser.id,
-          date: dateStr,
-          emp_name: currentUser.name,
-          checkin_time: eventType === "IN" ? timeStr : undefined,
-          checkout_time: eventType === "OUT" ? timeStr : undefined,
-          latetime: eventType === "IN" ? lateMinutes : 0,
-          latecheck: eventType === "IN" ? latecheck : "FALSE",
-          reason: eventType === "IN" ? reason : "-",
-          location: closest?.name || "-",
-          coords: `${locationStatus.coords.lat.toFixed(6)}, ${locationStatus.coords.lng.toFixed(6)}`,
-          timestamp_id: String(Date.now()),
-          timestamp: now.toISOString()
-        };
-
-        setSaving(true);
+        setLoading(true);
         try {
-          const r = await postApi(payload);
-          if (r.ok) {
-            // update local today state
-            setTodayState(prev => {
-              const next = { ...prev };
-              const key = `${currentUser.id}_${dateStr}`;
-              const row = next[key] || {};
-              if (eventType === "IN") row.inTime = timeStr;
-              if (eventType === "OUT") row.outTime = timeStr;
-              next[key] = row;
-              return next;
-            });
+          const payload = {
+            action: "log",
+            event: eventType,
+            emp_id: currentUser.id,
+            emp_name: currentUser.name || "",
+            date: dateKey(now),                     // yyyy-MM-dd (IMPORTANT)
+            checkin_time: eventType === "IN" ? timeHHMM(now) : undefined,
+            checkout_time: eventType === "OUT" ? timeHHMM(now) : undefined,
+            latetime: eventType === "IN" ? lateMinutes : undefined,
+            latecheck: eventType === "IN" ? (isLate ? "TRUE" : "FALSE") : undefined,
+            reason: eventType === "IN" ? (isLate ? lateReason : "-") : undefined,
+            location: locationStatus.matchedLocation?.name || "-",
+            coords: `${locationStatus.coords.lat.toFixed(6)}, ${locationStatus.coords.lng.toFixed(6)}`,
+            timestamp_id: String(Date.now()),
+            timestamp: now.toISOString(),
+          };
 
-            showToast(eventType === "IN" ? "Checked IN (saved to sheet)" : "Checked OUT (saved to sheet)");
-            if (eventType === "IN") setLateReason("");
-            fetchMonthlyStats(); // refresh
-          } else {
-            showToast(r.error || "Save failed", "err");
-          }
+          const r = await apiPost(payload);
+          if (!r.ok) throw new Error(r.error || "Log failed");
+
+          if (eventType === "IN") setLateReason("");
+          notify(eventType === "IN" ? "Checked In saved to Sheet" : "Checked Out saved to Sheet");
+
+          // refresh from sheet (so OUT updates the correct row)
+          await refreshLogs(currentUser.id);
+
         } catch (e) {
-          showToast("Save failed (check API / deployment / permissions)", "err");
+          notify(e.message, "err");
         } finally {
-          setSaving(false);
+          setLoading(false);
         }
       };
 
-      // -------------------------
-      // Settings: Test API
-      // -------------------------
-      const testApi = async () => {
-        try {
-          const r = await postApi({ action: "ping" });
-          if (r.ok) showToast("API OK ✅");
-          else showToast(r.error || "API error", "err");
-        } catch (e) {
-          showToast("API test failed", "err");
-        }
-      };
-
-      // -------------------------
-      // UI
-      // -------------------------
-      const monthLabel = useMemo(() => {
-        if (!monthlyStats.year) return "This Month";
-        return `${monthlyStats.year}-${String(monthlyStats.month).padStart(2,"0")}`;
-      }, [monthlyStats]);
+      // --- UI ---
+      const isLateNow = (() => {
+        const [sh, sm] = config.startTime.split(":").map(Number);
+        const t = new Date(clock);
+        const ws = new Date(clock);
+        ws.setHours(sh, sm, 0, 0);
+        return t > ws;
+      })();
 
       return (
         <div className="min-h-screen bg-slate-100 pb-12">
-          {/* Toast */}
           {toast && (
-            <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-lg shadow-lg text-white font-medium animate-in slide-in-from-top-5 ${
-              toast.type === "err" ? "bg-red-500" : "bg-slate-900"
-            }`}>
+            <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-lg shadow-lg text-white font-semibold
+              ${toast.type === "err" ? "bg-red-600" : "bg-slate-800"}`}>
               {toast.msg}
             </div>
           )}
 
-          {/* Settings Modal */}
-          {showSettings && (
-            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-              <Card className="w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-bold flex items-center">
-                    <Icons.Settings size={20} className="mr-2" /> App Settings
-                  </h3>
-                  <button onClick={() => setShowSettings(false)} className="text-slate-400 hover:text-slate-600">
-                    <Icons.X size={24} />
-                  </button>
-                </div>
-
-                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm p-3 rounded mb-4">
-                  <b>Important:</b> SECRET ใน HTML ต้องตรงกับ SECRET ใน Apps Script ไม่งั้นจะขึ้น <b>Unauthorized</b>
-                </div>
-
-                <Input
-                  label="Apps Script Web App URL"
-                  value={settings.apiUrl}
-                  onChange={e => setSettings(prev => ({ ...prev, apiUrl: e.target.value }))}
-                  placeholder="https://script.google.com/macros/s/....../exec"
-                  required
-                />
-
-                <Input
-                  label="SECRET Token"
-                  value={settings.secret}
-                  onChange={e => setSettings(prev => ({ ...prev, secret: e.target.value }))}
-                  placeholder="Same as Apps Script SECRET"
-                  required
-                />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <Input
-                    label="Start Time (HH:MM)"
-                    value={settings.startTime}
-                    onChange={e => setSettings(prev => ({ ...prev, startTime: e.target.value }))}
-                    placeholder="10:00"
-                  />
-                  <Input
-                    label="Max Late Count (per month)"
-                    value={String(settings.maxLateCount)}
-                    onChange={e => setSettings(prev => ({ ...prev, maxLateCount: Number(e.target.value) || 0 }))}
-                    placeholder="6"
-                  />
-                  <Input
-                    label="Max Late Minutes (per month)"
-                    value={String(settings.maxLateMinutes)}
-                    onChange={e => setSettings(prev => ({ ...prev, maxLateMinutes: Number(e.target.value) || 0 }))}
-                    placeholder="180"
-                  />
-                  <Input
-                    label="Logs Sheet Link (optional)"
-                    value={settings.logsSheetUrl}
-                    onChange={e => setSettings(prev => ({ ...prev, logsSheetUrl: e.target.value }))}
-                    placeholder="https://docs.google.com/spreadsheets/d/.../edit"
-                  />
-                </div>
-
-                <hr className="my-5 border-slate-100" />
-
-                <div className="bg-blue-50 border border-blue-200 text-blue-900 text-sm p-3 rounded mb-3">
-                  Optional: Load office locations & limits from Config CSV
-                </div>
-
-                <Input
-                  label="Config CSV URL (optional)"
-                  value={settings.configCsvUrl}
-                  onChange={e => setSettings(prev => ({ ...prev, configCsvUrl: e.target.value }))}
-                  placeholder="https://docs.google.com/spreadsheets/d/.../export?format=csv"
-                />
-
-                <div className="flex gap-2">
-                  <Button onClick={fetchConfigFromCsv} disabled={loadingConfig} icon="RefreshCw" className="flex-1">
-                    {loadingConfig ? "Loading..." : "Update Config from CSV"}
-                  </Button>
-                  <Button onClick={testApi} variant="secondary" className="flex-1">
-                    Test API (ping)
-                  </Button>
-                </div>
-
-                <div className="text-xs text-slate-400 mt-4">
-                  Tip: หลังแก้ Apps Script ให้ Deploy เวอร์ชันใหม่ทุกครั้ง (New version)
-                </div>
-              </Card>
-            </div>
-          )}
-
-          {/* Header */}
-          <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-            <div className="max-w-md mx-auto px-4 h-16 flex items-center justify-between">
-              <div className="flex items-center font-bold text-lg text-slate-800">
-                <Icons.CheckCircle className="text-blue-600 mr-2" size={24} /> GeoCheck
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowSettings(true)}
-                  className="p-2 bg-slate-50 text-slate-500 rounded-full hover:bg-slate-100 transition-colors"
-                  title="Settings"
-                >
-                  <Icons.Settings size={18} />
-                </button>
-
-                {currentUser && (
-                  <button
-                    onClick={handleLogout}
-                    className="p-2 bg-slate-50 text-slate-500 rounded-full hover:bg-red-50 hover:text-red-600 transition-colors"
-                    title="Logout"
-                  >
-                    <Icons.LogOut size={18} />
-                  </button>
-                )}
-              </div>
-            </div>
-          </header>
-
-          {/* Body */}
-          <main className="max-w-md mx-auto px-4 py-6 space-y-6">
-            {/* AUTH */}
-            {!currentUser ? (
-              <Card className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="font-bold text-lg text-slate-800">
-                    {authMode === "login" ? "Employee Login" : "Create Account"}
+          {!currentUser ? (
+            <div className="min-h-screen flex items-center justify-center p-4">
+              <div className="w-full max-w-md">
+                <div className="text-center mb-6">
+                  <div className="inline-block bg-blue-600 text-white p-4 rounded-2xl shadow-lg shadow-blue-500/30 mb-3">
+                    <Icons.CheckCircle size={44} />
                   </div>
-                  <div className="text-xs bg-slate-100 px-2 py-1 rounded">
-                    {authMode === "login" ? "Login" : "Register"}
-                  </div>
+                  <h1 className="text-3xl font-extrabold text-slate-800">GeoCheck</h1>
+                  <p className="text-slate-500">Employee Attendance System</p>
                 </div>
 
-                {authMode === "register" && (
-                  <>
+                <Card className="p-7">
+                  <div className="flex items-center justify-between mb-5">
+                    <h2 className="text-lg font-bold text-slate-700 flex items-center gap-2">
+                      {authMode === "login" ? <Icons.LogIn size={20}/> : <Icons.UserPlus size={20}/>}
+                      {authMode === "login" ? "Employee Login" : "New Account"}
+                    </h2>
+                  </div>
+
+                  {authMode === "register" && (
                     <Input
                       label="Full Name"
-                      value={authForm.name}
-                      onChange={e => setAuthForm(prev => ({ ...prev, name: e.target.value }))}
                       placeholder="John Doe"
-                      required
+                      value={authForm.name}
+                      onChange={e => setAuthForm({ ...authForm, name: e.target.value })}
                     />
-                  </>
-                )}
+                  )}
 
-                <Input
-                  label="Email"
-                  type="email"
-                  value={authForm.email}
-                  onChange={e => setAuthForm(prev => ({ ...prev, email: e.target.value }))}
-                  placeholder="name@chula.ac.th"
-                  required
-                  hint={isIdAuto ? "Employee ID will be auto-filled from this email" : "If not in lookup table, please type Employee ID manually"}
-                />
-
-                {authMode === "register" && (
                   <Input
-                    label="Employee ID"
-                    value={authForm.id}
-                    onChange={e => setAuthForm(prev => ({ ...prev, id: e.target.value }))}
-                    placeholder="20260101"
-                    required
-                    disabled={isIdAuto}
-                    hint={isIdAuto ? "Auto-filled" : "Required to check-in/out"}
+                    label="Email"
+                    type="email"
+                    placeholder="name@chula.ac.th"
+                    value={authForm.email}
+                    onChange={e => setAuthForm({ ...authForm, email: e.target.value })}
                   />
-                )}
+                  <Input
+                    label="Password"
+                    type="password"
+                    placeholder="••••••••"
+                    value={authForm.password}
+                    onChange={e => setAuthForm({ ...authForm, password: e.target.value })}
+                  />
 
-                <Input
-                  label="Password"
-                  type="password"
-                  value={authForm.password}
-                  onChange={e => setAuthForm(prev => ({ ...prev, password: e.target.value }))}
-                  placeholder="••••••••"
-                  required
-                />
+                  {authMode === "login" ? (
+                    <Button onClick={handleLogin} disabled={loading}>
+                      {loading ? "Signing in..." : "Sign In"}
+                    </Button>
+                  ) : (
+                    <Button onClick={handleRegister} disabled={loading} variant="success">
+                      {loading ? "Creating..." : "Create Account"}
+                    </Button>
+                  )}
 
-                {authMode === "login" ? (
-                  <Button onClick={handleLogin} disabled={loadingAuth} className="w-full py-3 text-lg">
-                    {loadingAuth ? "Signing in..." : "Sign In"}
-                  </Button>
-                ) : (
-                  <Button onClick={handleRegister} disabled={loadingAuth} variant="success" className="w-full py-3 text-lg">
-                    {loadingAuth ? "Creating..." : "Create Account"}
-                  </Button>
-                )}
+                  <div className="mt-5 pt-5 border-t border-slate-100 text-center">
+                    <button
+                      className="text-blue-600 font-semibold hover:underline text-sm"
+                      onClick={() => {
+                        setAuthMode(authMode === "login" ? "register" : "login");
+                        setAuthForm({ name:"", email:"", password:"" });
+                      }}
+                    >
+                      {authMode === "login" ? "Register New Employee" : "Back to Login"}
+                    </button>
 
-                <div className="mt-5 pt-5 border-t border-slate-100 text-center">
-                  <button
-                    onClick={() => {
-                      setAuthMode(authMode === "login" ? "register" : "login");
-                      setAuthForm({ name: "", email: "", password: "", id: "" });
-                    }}
-                    className="text-blue-600 font-medium hover:underline text-sm"
-                  >
-                    {authMode === "login" ? "Register New Employee" : "Back to Login"}
-                  </button>
-                </div>
-
-                <div className="mt-6 text-xs text-slate-400">
-                  If you see <b>Unauthorized</b>: open Settings and make sure SECRET matches Apps Script.
-                </div>
-              </Card>
-            ) : (
-              <>
-                {/* Profile */}
-                <Card className="p-5">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="text-sm text-slate-500">Logged in as</div>
-                      <div className="text-xl font-bold flex items-center">
-                        <Icons.User size={18} className="mr-2 text-blue-600" />
-                        {currentUser.name}
-                      </div>
-                      <div className="text-sm text-slate-500 mt-1">{currentUser.email}</div>
-                      <div className="text-sm mt-1">
-                        <span className="text-slate-500">Employee ID:</span>{" "}
-                        <span className="font-mono font-semibold">{currentUser.id}</span>
-                      </div>
+                    <div className="text-xs text-slate-400 mt-4">
+                      Uses Apps Script API (Option A). No CSV fetch.
                     </div>
-
-                    {settings.logsSheetUrl && (
-                      <a
-                        href={settings.logsSheetUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs inline-flex items-center text-blue-600 hover:underline"
-                        title="Open Logs Sheet"
-                      >
-                        Open Logs <Icons.ExternalLink size={14} className="ml-1" />
-                      </a>
-                    )}
                   </div>
                 </Card>
+              </div>
+            </div>
+          ) : (
+            <>
+              <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+                <div className="max-w-md mx-auto px-4 h-16 flex items-center justify-between">
+                  <div className="flex items-center font-extrabold text-lg text-slate-800">
+                    <Icons.CheckCircle className="text-blue-600 mr-2" size={22} /> GeoCheck
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right hidden sm:block">
+                      <div className="text-sm font-semibold text-slate-700">{currentUser.name}</div>
+                      <div className="text-xs text-slate-400">ID: {currentUser.id || "-"}</div>
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="p-2 bg-slate-50 text-slate-500 rounded-full hover:bg-red-50 hover:text-red-600 transition"
+                      title="Logout"
+                    >
+                      <Icons.LogOut size={18} />
+                    </button>
+                  </div>
+                </div>
+              </header>
 
-                {/* Monthly Stats */}
+              <main className="max-w-md mx-auto px-4 py-6 space-y-6">
+                <Card className="bg-gradient-to-br from-slate-800 to-slate-900 text-white p-6 shadow-lg">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <p className="text-slate-300 text-sm font-semibold mb-1">Today's Status</p>
+                      <h2 className="text-3xl font-bold font-mono">{formatClock(clock)}</h2>
+                      <div className="text-xs text-slate-300 mt-1">{todayKey}</div>
+                    </div>
+                    <div className={`px-3 py-1 rounded-full text-xs font-extrabold ${
+                      status.checkedOut ? "bg-slate-600" :
+                      status.checkedIn ? "bg-emerald-500" :
+                      isLateNow ? "bg-orange-500" : "bg-blue-500"
+                    }`}>
+                      {status.checkedOut ? "COMPLETED" : status.checkedIn ? "WORKING" : isLateNow ? "LATE START" : "READY"}
+                    </div>
+                  </div>
+
+                  {status.checkedIn && (
+                    <div className="mt-4 pt-4 border-t border-white/10 flex gap-4 text-xs text-slate-200">
+                      <div>In: <span className="text-white font-mono">{status.checkInTime}</span></div>
+                      {status.checkedOut && <div>Out: <span className="text-white font-mono">{status.checkOutTime}</span></div>}
+                    </div>
+                  )}
+                </Card>
+
                 <Card className="p-5">
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-semibold text-slate-800 flex items-center">
+                    <h3 className="font-bold text-slate-800 flex items-center">
                       <Icons.BarChart size={18} className="mr-2 text-indigo-600" />
                       Monthly Attendance
                     </h3>
-                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">{monthLabel}</span>
+                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">This Month</span>
                   </div>
 
-                  <ProgressBar
-                    label="Late Occurrences"
-                    current={monthlyStats.lateCount}
-                    max={settings.maxLateCount}
-                    dangerWhenOver={true}
-                  />
-
-                  <ProgressBar
-                    label="Late Minutes"
-                    current={monthlyStats.lateMinutes}
-                    max={settings.maxLateMinutes}
-                    dangerWhenOver={true}
-                  />
+                  <ProgressBar label="Late Occurrences" current={monthlyStats.lateCount} max={config.maxLateCount} />
+                  <ProgressBar label="Late Minutes" current={monthlyStats.lateMinutes} max={config.maxLateMinutes} />
 
                   <div className="text-xs text-slate-400 mt-2 text-center">
-                    Limits: {settings.maxLateCount} times / {settings.maxLateMinutes} minutes per month
+                    Limits: {config.maxLateCount} times / {config.maxLateMinutes} minutes per month
                   </div>
-
-                  <button
-                    onClick={fetchMonthlyStats}
-                    className="mt-3 w-full text-xs text-blue-600 hover:underline"
-                  >
-                    Refresh Stats
-                  </button>
                 </Card>
 
-                {/* Location */}
                 <Card className="p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="font-semibold flex items-center">
-                      <Icons.MapPin size={18} className="mr-2 text-blue-600" /> Location Check
-                    </div>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-slate-800 flex items-center">
+                      <Icons.MapPin size={18} className="mr-2 text-blue-600" />
+                      Location Check
+                    </h3>
                     {locationStatus.matchedLocation && (
-                      <span className="text-xs font-medium bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                      <span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2 py-1 rounded">
                         {locationStatus.matchedLocation.name}
                       </span>
                     )}
@@ -929,15 +567,16 @@
 
                   {!locationStatus.coords ? (
                     <div className="text-center py-6 bg-slate-50 rounded-lg border border-dashed border-slate-300">
-                      <Button onClick={verifyLocation} disabled={locationStatus.loading} className="mx-auto" icon="Navigation">
-                        {locationStatus.loading ? "Locating..." : "Verify Location"}
+                      <Button onClick={getLocation} disabled={locationStatus.loading} variant="ghost">
+                        <span className="inline-flex items-center gap-2">
+                          <Icons.Navigation size={16} />
+                          {locationStatus.loading ? "Locating..." : "Verify Location"}
+                        </span>
                       </Button>
-                      <p className="text-xs text-slate-400 mt-3">
-                        {locationStatus.loading ? "Asking for permission..." : "GPS permission required."}
-                      </p>
+                      <p className="text-xs text-slate-400 mt-3">GPS permission required.</p>
                       {locationStatus.error && (
-                        <p className="mt-3 text-red-500 text-sm flex items-center justify-center">
-                          <Icons.AlertTriangle size={14} className="mr-1" /> {locationStatus.error}
+                        <p className="mt-3 text-red-600 text-sm flex items-center justify-center gap-2">
+                          <Icons.AlertTriangle size={14} /> {locationStatus.error}
                         </p>
                       )}
                     </div>
@@ -945,7 +584,7 @@
                     <div className="space-y-3">
                       <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg">
                         <span className="text-sm text-slate-500">Distance</span>
-                        <span className={`font-bold text-lg ${
+                        <span className={`font-extrabold text-lg ${
                           locationStatus.distance > (locationStatus.matchedLocation?.radius || 10) ? "text-red-600" : "text-green-600"
                         }`}>
                           {locationStatus.distance}m
@@ -953,67 +592,52 @@
                       </div>
 
                       {locationStatus.distance > (locationStatus.matchedLocation?.radius || 10) ? (
-                        <div className="text-xs text-red-600 bg-red-50 p-2 rounded flex items-start">
-                          <Icons.AlertTriangle size={14} className="mr-1 flex-shrink-0 mt-0.5" />
-                          Too far from {locationStatus.matchedLocation?.name}.
+                        <div className="text-xs text-red-700 bg-red-50 p-2 rounded flex items-center gap-2">
+                          <Icons.AlertTriangle size={14} /> Too far from {locationStatus.matchedLocation?.name}.
                         </div>
                       ) : (
-                        <div className="text-xs text-green-700 bg-green-50 p-2 rounded flex items-center">
-                          <Icons.CheckCircle size={14} className="mr-1" />
-                          Verified: {locationStatus.matchedLocation?.name}.
+                        <div className="text-xs text-green-700 bg-green-50 p-2 rounded flex items-center gap-2">
+                          <Icons.CheckCircle size={14} /> Verified: {locationStatus.matchedLocation?.name}
                         </div>
                       )}
 
-                      <button onClick={verifyLocation} className="text-xs text-blue-600 hover:underline w-full text-center">
+                      <button onClick={getLocation} className="text-xs text-blue-600 hover:underline w-full text-center">
                         Refresh GPS
                       </button>
                     </div>
                   )}
                 </Card>
 
-                {/* Check-in/out */}
                 <Card className="p-5">
-                  {!todayStatus.checkedIn ? (
+                  {!status.checkedIn ? (
                     <>
                       {isLateNow && (
-                        <div className="mb-4 bg-orange-50 border border-orange-200 rounded-lg p-3">
-                          <div className="text-sm font-semibold text-orange-700 mb-2">
+                        <div className="mb-4">
+                          <label className="block text-sm font-semibold text-orange-700 mb-1">
                             Late Reason <span className="text-red-500">*</span>
-                          </div>
+                          </label>
                           <textarea
-                            className="w-full px-3 py-2 bg-white border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-700 text-sm"
+                            className="w-full px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-700 text-sm"
                             rows="2"
                             placeholder="Why are you late?"
                             value={lateReason}
                             onChange={e => setLateReason(e.target.value)}
                           />
-                          <div className="text-xs text-orange-700 mt-2">
-                            You are after start time ({settings.startTime}). Reason required.
-                          </div>
                         </div>
                       )}
 
-                      <Button
-                        onClick={() => handleLog("IN")}
-                        disabled={saving || !locationStatus.coords}
-                        className="w-full py-4 text-lg shadow-xl shadow-blue-500/20"
-                      >
-                        {saving ? "Saving..." : "SUBMIT CHECK-IN"}
+                      <Button onClick={() => handleAction("IN")} disabled={loading || !locationStatus.coords} variant="primary">
+                        {loading ? "Saving..." : "SUBMIT CHECK-IN"}
                       </Button>
                     </>
-                  ) : !todayStatus.checkedOut ? (
-                    <div className="text-center space-y-4">
-                      <div className="bg-blue-50 text-blue-800 p-4 rounded-lg text-sm">
-                        You checked in at <strong>{todayStatus.inTime}</strong>.<br/>Ready to leave?
+                  ) : !status.checkedOut ? (
+                    <div className="space-y-4">
+                      <div className="bg-blue-50 text-blue-800 p-4 rounded-lg text-sm text-center">
+                        You checked in at <strong>{status.checkInTime}</strong>.
+                        <br />Ready to leave?
                       </div>
-
-                      <Button
-                        onClick={() => handleLog("OUT")}
-                        disabled={saving || !locationStatus.coords}
-                        variant="danger"
-                        className="w-full py-4 text-lg"
-                      >
-                        {saving ? "Saving..." : "CHECK OUT"}
+                      <Button onClick={() => handleAction("OUT")} disabled={loading || !locationStatus.coords} variant="danger">
+                        {loading ? "Saving..." : "CHECK OUT"}
                       </Button>
                     </div>
                   ) : (
@@ -1021,33 +645,29 @@
                       <div className="inline-block p-3 bg-green-100 text-green-600 rounded-full mb-3">
                         <Icons.CheckCircle size={32} />
                       </div>
-                      <h3 className="text-lg font-bold text-slate-800">Shift Complete</h3>
-                      <p className="text-slate-500 text-sm">
-                        In: <span className="font-mono">{todayStatus.inTime}</span> &nbsp;|&nbsp;
-                        Out: <span className="font-mono">{todayStatus.outTime}</span>
-                      </p>
-
-                      <button
-                        className="mt-3 text-xs text-blue-600 hover:underline"
-                        onClick={() => {
-                          // allow re-test quickly (optional)
-                          fetchMonthlyStats();
-                          verifyLocation();
-                        }}
-                      >
-                        Refresh
-                      </button>
+                      <h3 className="text-lg font-extrabold text-slate-800">Shift Complete</h3>
+                      <p className="text-slate-500 text-sm">Have a great evening!</p>
                     </div>
                   )}
                 </Card>
-              </>
-            )}
-          </main>
 
-          {/* Footer */}
-          <footer className="max-w-md mx-auto px-4 pb-8 text-center text-xs text-slate-400">
-            GeoCheck • Option A (Apps Script API → Google Sheets)
-          </footer>
+                <Card className="p-5">
+                  <div className="text-sm font-bold text-slate-800 mb-2">Debug</div>
+                  <div className="text-xs text-slate-500 space-y-1">
+                    <div>API: <span className="font-mono break-all">{API_URL}</span></div>
+                    <div>Today Row: {todayRow ? "FOUND" : "NOT FOUND"}</div>
+                    <div>Logs Loaded: {logs.length}</div>
+                  </div>
+                  <div className="mt-3">
+                    <Button variant="ghost" onClick={() => refreshLogs(currentUser.id).then(()=>notify("Logs refreshed")).catch(e=>notify(e.message,"err"))}>
+                      Refresh Logs from Sheet
+                    </Button>
+                  </div>
+                </Card>
+
+              </main>
+            </>
+          )}
         </div>
       );
     }
