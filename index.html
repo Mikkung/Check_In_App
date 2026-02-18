@@ -60,10 +60,8 @@
 
     const pad2 = (n) => String(n).padStart(2, "0");
     const dateKey = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; // yyyy-MM-dd
-    const timeHHMM = (d = new Date()) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
     const formatClock = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // Get Device ID Function
     function getDeviceId() {
       let id = localStorage.getItem("geocheck_device_id");
       if (!id) {
@@ -72,8 +70,8 @@
       }
       return id;
     }
-      
-    
+
+    // IMPORTANT: no Content-Type header (avoid preflight)
     async function apiPost(payload) {
       const res = await fetch(API_URL, {
         method: "POST",
@@ -81,10 +79,8 @@
         redirect: "follow",
       });
       const text = await res.text();
-      let data;
-      try { data = JSON.parse(text); } 
-      catch { data = { ok:false, error:"Invalid JSON from server", raw:text }; }
-      return data;
+      try { return JSON.parse(text); }
+      catch { return { ok:false, error:"Invalid JSON from server", raw:text }; }
     }
 
     // --- UI Components ---
@@ -139,11 +135,9 @@
 
       const [currentUser, setCurrentUser] = useState(null);
       const [authMode, setAuthMode] = useState("login"); // login|register
-
       const [authForm, setAuthForm] = useState({ name:"", email:"", password:"" });
       const [lateReason, setLateReason] = useState("");
 
-      // config
       const [config] = useState({
         startTime: "10:00",
         maxLateCount: 6,
@@ -166,7 +160,7 @@
         setTimeout(() => setToast(null), 3000);
       };
 
-      // load session
+      // load saved session
       useEffect(() => {
         const saved = localStorage.getItem("geocheck_user_v1");
         if (saved) {
@@ -184,19 +178,6 @@
         const t = setInterval(() => setClock(new Date()), 1000);
         return () => clearInterval(t);
       }, []);
-
-      // fetch logs after login
-      const refreshLogs = async (emp_id) => {
-        const r = await apiPost({ action:"fetchLogs", emp_id });
-        if (!r.ok) throw new Error(r.error || "fetchLogs failed");
-        setLogs(r.logs || []);
-      };
-
-      useEffect(() => {
-        if (currentUser?.id) {
-          refreshLogs(currentUser.id).catch(err => notify(err.message, "err"));
-        }
-      }, [currentUser?.id]);
 
       // geolocation
       const getLocation = () => {
@@ -239,9 +220,22 @@
         if (currentUser && !locationStatus.coords && !locationStatus.loading) getLocation();
       }, [currentUser]);
 
+      // fetch logs
+      const refreshLogs = async (emp_id) => {
+        const r = await apiPost({ action:"fetchLogs", emp_id });
+        if (!r.ok) throw new Error(r.error || "fetchLogs failed");
+        setLogs(r.logs || []);
+      };
+
+      useEffect(() => {
+        if (currentUser?.id) {
+          refreshLogs(currentUser.id).catch(err => notify(err.message, "err"));
+        }
+      }, [currentUser?.id]);
+
       // derived: today row
       const todayKey = dateKey(new Date());
-      const todayRow = useMemo(() => logs.find(r => r.date === todayKey) || null, [logs, todayKey]);
+      const todayRow = useMemo(() => (logs.find(r => r.date === todayKey) || null), [logs, todayKey]);
 
       const status = useMemo(() => {
         const checkedIn  = !!(todayRow && todayRow.checkin_time && todayRow.checkin_time !== "-");
@@ -262,7 +256,6 @@
         let cnt = 0, mins = 0;
 
         logs.forEach(r => {
-          if (r.emp_id !== currentUser.id) return;
           if (!String(r.date || "").startsWith(ym)) return;
           const isLate = String(r.latecheck || "").toUpperCase() === "TRUE" || Number(r.latetime || 0) > 0;
           if (isLate) {
@@ -274,54 +267,74 @@
         return { lateCount: cnt, lateMinutes: mins };
       }, [logs, currentUser?.id]);
 
+      // is late now
+      const isLateNow = useMemo(() => {
+        const [sh, sm] = config.startTime.split(":").map(Number);
+        const ws = new Date(clock);
+        ws.setHours(sh, sm, 0, 0);
+        return clock > ws;
+      }, [clock, config.startTime]);
+
       // auth
       const handleRegister = async () => {
         if (!authForm.name || !authForm.email || !authForm.password) {
-          showNotification("All fields are required", "error");
+          notify("All fields are required", "err");
           return;
         }
-      
-        const resp = await apiPost({
-          action: "register",
-          name: authForm.name,
-          email: authForm.email,
-          password: authForm.password,
-          device_id: getDeviceId(),
-        });
-      
-        if (!resp.ok) {
-          showNotification(resp.error || "Register failed", "error");
-          return;
+
+        setLoading(true);
+        try {
+          const resp = await apiPost({
+            action: "register",
+            name: authForm.name,
+            email: authForm.email,
+            password: authForm.password,
+            device_id: getDeviceId(),
+          });
+
+          if (!resp.ok) {
+            notify(resp.error || "Register failed", "err");
+            return;
+          }
+
+          setCurrentUser(resp.user);
+          setAuthForm({ name:"", email:"", password:"" });
+          notify("Account created successfully!");
+        } finally {
+          setLoading(false);
         }
-      
-        setCurrentUser(resp.user); // {id,name,email}
-        showNotification("Account created successfully!");
       };
-      
+
       const handleLogin = async () => {
         if (!authForm.email || !authForm.password) {
-          showNotification("Please enter Email and Password", "error");
+          notify("Please enter Email and Password", "err");
           return;
         }
-      
-        const resp = await apiPost({
-          action: "login",
-          email: authForm.email,
-          password: authForm.password,
-          device_id: getDeviceId(),
-        });
-      
-        if (!resp.ok) {
-          if (resp.error_code === "DEVICE_MISMATCH") {
-            showNotification("เปลี่ยนเครื่องแล้ว ต้องให้ Admin approve ก่อน", "error");
-          } else {
-            showNotification(resp.error || "Login failed", "error");
+
+        setLoading(true);
+        try {
+          const resp = await apiPost({
+            action: "login",
+            email: authForm.email,
+            password: authForm.password,
+            device_id: getDeviceId(),
+          });
+
+          if (!resp.ok) {
+            if (resp.error_code === "DEVICE_MISMATCH") {
+              notify("เปลี่ยนเครื่องแล้ว ต้องให้ Admin approve ก่อน", "err");
+            } else {
+              notify(resp.error || "Login failed", "err");
+            }
+            return;
           }
-          return;
+
+          setCurrentUser(resp.user);
+          setAuthForm({ name:"", email:"", password:"" });
+          notify(`Welcome back, ${resp.user.name}`);
+        } finally {
+          setLoading(false);
         }
-      
-        setCurrentUser(resp.user);
-        showNotification(`Welcome back, ${resp.user.name}`);
       };
 
       const handleLogout = () => {
@@ -333,9 +346,9 @@
         }
       };
 
-      // check-in/out
+      // check-in/out (Option A only)
       const handleAction = async (eventType) => {
-        if (!currentUser?.id) { notify("No user", "err"); return; }
+        if (!currentUser?.email) { notify("No user email", "err"); return; }
 
         if (!locationStatus.coords) {
           notify("Please verify your location first", "err");
@@ -349,131 +362,86 @@
           return;
         }
 
-        // guard
-        if (eventType === "IN" && status.checkedIn && !status.checkedOut) {
-          notify("Already checked in today", "err");
-          return;
-        }
-        if (eventType === "OUT" && !status.checkedIn) {
-          notify("No check-in found for today", "err");
-          return;
-        }
-        if (eventType === "OUT" && status.checkedOut) {
-          notify("Already checked out today", "err");
-          return;
-        }
+        // guards
+        if (eventType === "IN" && status.checkedIn && !status.checkedOut) { notify("Already checked in today", "err"); return; }
+        if (eventType === "OUT" && !status.checkedIn) { notify("No check-in found for today", "err"); return; }
+        if (eventType === "OUT" && status.checkedOut) { notify("Already checked out today", "err"); return; }
 
-        const deviceId = getDeviceId();
-        const email = currentUser.email;
-      
-        if (type === "IN") {
-          const resp = await apiPost({
-            action: "log",
-            event: "IN",
-            email,
-            device_id: deviceId,
-            coords: `${locationStatus.coords.lat.toFixed(6)}, ${locationStatus.coords.lng.toFixed(6)}`,
-            location: locationStatus.matchedLocation?.name || "-",
-            reason: isLate ? lateReason : "-",
-            latetime: isLate ? lateMinutes : 0,
-            latecheck: isLate ? "TRUE" : "FALSE",
-          });
-      
-          if (!resp.ok) {
-            showNotification(resp.error || "Check-in failed", "error");
-            return;
-          }
-      
-          // เก็บ session_id ไว้ใช้ตอน OUT
-          localStorage.setItem(`geocheck_session_${email}`, resp.session_id);
-      
-          showNotification("Successfully Checked In!");
-          setLateReason("");
-          return;
-        }
-      
-        // OUT
-        const sessionId = localStorage.getItem(`geocheck_session_${email}`) || "";
-      
-        const resp = await apiPost({
-          action: "log",
-          event: "OUT",
-          email,
-          device_id: deviceId,
-          session_id: sessionId,
-        });
-      
-        if (!resp.ok) {
-          showNotification(resp.error || "Check-out failed", "error");
-          return;
-        }
-      
-        localStorage.removeItem(`geocheck_session_${email}`);
-        showNotification("Successfully Checked Out!");
-      };
-      
-        const now = new Date();
-        const [sh, sm] = config.startTime.split(":").map(Number);
-        const workStart = new Date(now);
-        workStart.setHours(sh, sm, 0, 0);
-
-        let isLate = false;
+        // late calc (only for IN)
         let lateMinutes = 0;
+        let latecheck = "FALSE";
+        let reason = "-";
 
         if (eventType === "IN") {
-          if (now > workStart) {
-            isLate = true;
-            lateMinutes = Math.floor((now - workStart) / 60000);
-          }
-          if (isLate && !lateReason.trim()) {
-            notify("Late reason required for Check-In", "err");
-            return;
+          const now = new Date();
+          const [sh, sm] = config.startTime.split(":").map(Number);
+          const ws = new Date(now);
+          ws.setHours(sh, sm, 0, 0);
+
+          if (now > ws) {
+            lateMinutes = Math.floor((now - ws) / 60000);
+            latecheck = "TRUE";
+            reason = (lateReason || "").trim();
+            if (!reason) { notify("Late reason required for Check-In", "err"); return; }
           }
         }
 
         setLoading(true);
         try {
-          const payload = {
+          const email = currentUser.email;
+          const deviceId = getDeviceId();
+
+          if (eventType === "IN") {
+            const resp = await apiPost({
+              action: "log",
+              event: "IN",
+              email,
+              device_id: deviceId,
+              coords: `${locationStatus.coords.lat.toFixed(6)}, ${locationStatus.coords.lng.toFixed(6)}`,
+              location: locationStatus.matchedLocation?.name || "-",
+              reason,
+              latetime: lateMinutes,
+              latecheck,
+            });
+
+            if (!resp.ok) {
+              notify(resp.error || "Check-in failed", "err");
+              return;
+            }
+
+            localStorage.setItem(`geocheck_session_${email}`, resp.session_id || "");
+            setLateReason("");
+            notify("Successfully Checked In!");
+
+            // refresh logs
+            if (currentUser?.id) await refreshLogs(currentUser.id);
+            return;
+          }
+
+          // OUT
+          const sessionId = localStorage.getItem(`geocheck_session_${email}`) || "";
+          const resp = await apiPost({
             action: "log",
-            event: eventType,
-            emp_id: currentUser.id,
-            emp_name: currentUser.name || "",
-            date: dateKey(now),                     // yyyy-MM-dd (IMPORTANT)
-            checkin_time: eventType === "IN" ? timeHHMM(now) : undefined,
-            checkout_time: eventType === "OUT" ? timeHHMM(now) : undefined,
-            latetime: eventType === "IN" ? lateMinutes : undefined,
-            latecheck: eventType === "IN" ? (isLate ? "TRUE" : "FALSE") : undefined,
-            reason: eventType === "IN" ? (isLate ? lateReason : "-") : undefined,
-            location: locationStatus.matchedLocation?.name || "-",
-            coords: `${locationStatus.coords.lat.toFixed(6)}, ${locationStatus.coords.lng.toFixed(6)}`,
-            timestamp_id: String(Date.now()),
-            timestamp: now.toISOString(),
-          };
+            event: "OUT",
+            email,
+            device_id: deviceId,
+            session_id: sessionId,
+          });
 
-          const r = await apiPost(payload);
-          if (!r.ok) throw new Error(r.error || "Log failed");
+          if (!resp.ok) {
+            notify(resp.error || "Check-out failed", "err");
+            return;
+          }
 
-          if (eventType === "IN") setLateReason("");
-          notify(eventType === "IN" ? "Checked In saved to Sheet" : "Checked Out saved to Sheet");
+          localStorage.removeItem(`geocheck_session_${email}`);
+          notify("Successfully Checked Out!");
 
-          // refresh from sheet (so OUT updates the correct row)
-          await refreshLogs(currentUser.id);
+          if (currentUser?.id) await refreshLogs(currentUser.id);
 
-        } catch (e) {
-          notify(e.message, "err");
         } finally {
           setLoading(false);
         }
       };
-
-      // --- UI ---
-      const isLateNow = (() => {
-        const [sh, sm] = config.startTime.split(":").map(Number);
-        const t = new Date(clock);
-        const ws = new Date(clock);
-        ws.setHours(sh, sm, 0, 0);
-        return t > ws;
-      })();
 
       return (
         <div className="min-h-screen bg-slate-100 pb-12">
@@ -727,7 +695,11 @@
                     <div>Logs Loaded: {logs.length}</div>
                   </div>
                   <div className="mt-3">
-                    <Button variant="ghost" onClick={() => refreshLogs(currentUser.id).then(()=>notify("Logs refreshed")).catch(e=>notify(e.message,"err"))}>
+                    <Button
+                      variant="ghost"
+                      onClick={() => refreshLogs(currentUser.id).then(()=>notify("Logs refreshed")).catch(e=>notify(e.message,"err"))}
+                      disabled={loading}
+                    >
                       Refresh Logs from Sheet
                     </Button>
                   </div>
