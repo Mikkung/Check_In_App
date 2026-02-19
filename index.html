@@ -23,7 +23,7 @@
     const { useEffect, useMemo, useState } = React;
 
     // ===================== EDIT HERE =====================
-    const API_URL = "https://script.google.com/macros/s/AKfycbxZ-eQr5Zwz1FFihvzdKpzGYSjHd4gt3FGp3aBouf5blyDzcqJBezBioYQz1Of9vKSDkw/exec";
+    const API_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";
     const SECRET  = "ISE_TOKEN";
     // =====================================================
 
@@ -71,7 +71,7 @@
       return id;
     }
 
-    // IMPORTANT: no Content-Type header (avoid preflight)
+    // IMPORTANT: don't set Content-Type header to avoid preflight
     async function apiPost(payload) {
       const res = await fetch(API_URL, {
         method: "POST",
@@ -134,17 +134,17 @@
       const [toast, setToast] = useState(null);
 
       const [currentUser, setCurrentUser] = useState(null);
-      const [authMode, setAuthMode] = useState("login"); // login|register
+      const [authMode, setAuthMode] = useState("login");
       const [authForm, setAuthForm] = useState({ name:"", email:"", password:"" });
       const [lateReason, setLateReason] = useState("");
 
       const [config] = useState({
-        startTime: "10:00",
-        maxLateCount: 6,
+        startTime: "08:30",
+        maxLateCount: 5,
         maxLateMinutes: 180,
         locations: [
-          { name: "ISE_Headquarters", lat: 13.73656068, lng: 100.5333925, radius: 10 },
-          { name: "ChulaPat_14",      lat: 13.74406954, lng: 100.525551,  radius: 10 },
+          { name: "ISE_Headquarters", lat: 13.73656068, lng: 100.5333925, radius: 30 },
+          { name: "ChulaPat_14",      lat: 13.74406954, lng: 100.525551,  radius: 30 },
         ],
       });
 
@@ -160,7 +160,7 @@
         setTimeout(() => setToast(null), 3000);
       };
 
-      // load saved session
+      // load session
       useEffect(() => {
         const saved = localStorage.getItem("geocheck_user_v1");
         if (saved) {
@@ -173,7 +173,7 @@
         else localStorage.removeItem("geocheck_user_v1");
       }, [currentUser]);
 
-      // clock tick
+      // clock
       useEffect(() => {
         const t = setInterval(() => setClock(new Date()), 1000);
         return () => clearInterval(t);
@@ -233,7 +233,7 @@
         }
       }, [currentUser?.id]);
 
-      // derived: today row
+      // derived
       const todayKey = dateKey(new Date());
       const todayRow = useMemo(() => (logs.find(r => r.date === todayKey) || null), [logs, todayKey]);
 
@@ -248,7 +248,6 @@
         };
       }, [todayRow]);
 
-      // monthly stats
       const monthlyStats = useMemo(() => {
         if (!currentUser?.id) return { lateCount:0, lateMinutes:0 };
         const now = new Date();
@@ -267,7 +266,6 @@
         return { lateCount: cnt, lateMinutes: mins };
       }, [logs, currentUser?.id]);
 
-      // is late now
       const isLateNow = useMemo(() => {
         const [sh, sm] = config.startTime.split(":").map(Number);
         const ws = new Date(clock);
@@ -346,7 +344,7 @@
         }
       };
 
-      // check-in/out (Option A only)
+      // check-in/out
       const handleAction = async (eventType) => {
         if (!currentUser?.email) { notify("No user email", "err"); return; }
 
@@ -362,12 +360,11 @@
           return;
         }
 
-        // guards
         if (eventType === "IN" && status.checkedIn && !status.checkedOut) { notify("Already checked in today", "err"); return; }
         if (eventType === "OUT" && !status.checkedIn) { notify("No check-in found for today", "err"); return; }
         if (eventType === "OUT" && status.checkedOut) { notify("Already checked out today", "err"); return; }
 
-        // late calc (only for IN)
+        // late calc (only IN)
         let lateMinutes = 0;
         let latecheck = "FALSE";
         let reason = "-";
@@ -412,8 +409,6 @@
             localStorage.setItem(`geocheck_session_${email}`, resp.session_id || "");
             setLateReason("");
             notify("Successfully Checked In!");
-
-            // refresh logs
             if (currentUser?.id) await refreshLogs(currentUser.id);
             return;
           }
@@ -435,7 +430,6 @@
 
           localStorage.removeItem(`geocheck_session_${email}`);
           notify("Successfully Checked Out!");
-
           if (currentUser?.id) await refreshLogs(currentUser.id);
 
         } finally {
