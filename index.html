@@ -22,8 +22,13 @@
   <script type="text/babel">
     const { useEffect, useMemo, useState } = React;
 
+    // ===== WFA WINDOW (EDIT) =====
+    const WFA_ENABLED = true;
+    const WFA_START = "2026-03-14"; // yyyy-MM-dd
+    const WFA_END   = "2026-03-31"; // yyyy-MM-dd
+
     // ===================== EDIT HERE =====================
-    const API_URL = "https://script.google.com/macros/s/AKfycbwM3VF8v58zSaqpXGN3HHUSR51alLSEwYcg3WIWYqjqlhPh76fryp1Z5Uk0vIq0y9nAUQ/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbzaXlVKN7g7TClrZzTLqO1NIwhyVfdmPDXPuyjYKpBqSRbe0Ng-93pdh8mJX1f_RMaiGg/exec";
     const SECRET  = "ISE_TOKEN";
     // =====================================================
 
@@ -60,6 +65,10 @@
 
     const pad2 = (n) => String(n).padStart(2, "0");
     const dateKey = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; // yyyy-MM-dd
+    const isWfaActive = (ymd) => {
+      if (!WFA_ENABLED) return false;
+      return (ymd >= WFA_START && ymd <= WFA_END);
+    };
     const formatClock = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     function getDeviceId() {
@@ -144,7 +153,7 @@
         maxLateMinutes: 180,
         locations: [
           { name: "ISE_Headquarters", lat: 13.73656068, lng: 100.5333925, radius: 50 },
-          { name: "Eng Bldg 1", lat: 13.736649190639286, lng: 100.53261809104578, radius: 30 },
+          { name: "Eng Bldg 1",       lat: 13.736649190639286, lng: 100.53261809104578, radius: 30 },
           { name: "ChulaPat_14",      lat: 13.74406954, lng: 100.525551,  radius: 50 },
         ],
       });
@@ -235,8 +244,13 @@
       }, [currentUser?.id]);
 
       // derived
-      const todayKey = dateKey(new Date());
-      const todayRow = useMemo(() => (logs.find(r => r.date === todayKey) || null), [logs, todayKey]);
+      const todayKeyStr = dateKey(new Date());
+      const wfaActiveUI = isWfaActive(todayKeyStr);
+
+      const limitUI = locationStatus.matchedLocation?.radius || 10;
+      const outOfOfficeUI = locationStatus.distance != null && locationStatus.distance > limitUI;
+
+      const todayRow = useMemo(() => (logs.find(r => r.date === todayKeyStr) || null), [logs, todayKeyStr]);
 
       const status = useMemo(() => {
         const checkedIn  = !!(todayRow && todayRow.checkin_time && todayRow.checkin_time !== "-");
@@ -345,19 +359,22 @@
         }
       };
 
-      // check-in/out
+      // check-in/out (WFA minimal)
       const handleAction = async (eventType) => {
         if (!currentUser?.email) { notify("No user email", "err"); return; }
 
-        if (!locationStatus.coords) {
+        if (!locationStatus.coords || locationStatus.distance == null) {
           notify("Please verify your location first", "err");
           getLocation();
           return;
         }
 
         const limit = locationStatus.matchedLocation?.radius || 10;
-        if (locationStatus.distance > limit) {
-          notify(`Too far from ${locationStatus.matchedLocation?.name || "office"}`, "err");
+        const wfaActive = isWfaActive(dateKey(new Date()));
+
+        // Distance check only for IN (OUT ไม่บังคับระยะ)
+        if (eventType === "IN" && locationStatus.distance > limit && !wfaActive) {
+          notify(`Too far from ${locationStatus.matchedLocation?.name || "office"} (WFA not active)`, "err");
           return;
         }
 
@@ -390,22 +407,24 @@
           const deviceId = getDeviceId();
 
           if (eventType === "IN") {
+            const inOffice = locationStatus.distance <= limit;
+            const locationLabel = inOffice
+              ? (locationStatus.matchedLocation?.name || "-")
+              : "WFA_REMOTE";
+
             const resp = await apiPost({
               action: "log",
               event: "IN",
               email,
               device_id: deviceId,
               coords: `${locationStatus.coords.lat.toFixed(6)}, ${locationStatus.coords.lng.toFixed(6)}`,
-              location: locationStatus.matchedLocation?.name || "-",
+              location: locationLabel,
               reason,
               latetime: lateMinutes,
               latecheck,
             });
 
-            if (!resp.ok) {
-              notify(resp.error || "Check-in failed", "err");
-              return;
-            }
+            if (!resp.ok) { notify(resp.error || "Check-in failed", "err"); return; }
 
             localStorage.setItem(`geocheck_session_${email}`, resp.session_id || "");
             setLateReason("");
@@ -424,10 +443,7 @@
             session_id: sessionId,
           });
 
-          if (!resp.ok) {
-            notify(resp.error || "Check-out failed", "err");
-            return;
-          }
+          if (!resp.ok) { notify(resp.error || "Check-out failed", "err"); return; }
 
           localStorage.removeItem(`geocheck_session_${email}`);
           notify("Successfully Checked Out!");
@@ -542,19 +558,30 @@
               </header>
 
               <main className="max-w-md mx-auto px-4 py-6 space-y-6">
+                {/* ===== Today Card ===== */}
                 <Card className="bg-gradient-to-br from-slate-800 to-slate-900 text-white p-6 shadow-lg">
                   <div className="flex justify-between items-end">
                     <div>
                       <p className="text-slate-300 text-sm font-semibold mb-1">Today's Status</p>
                       <h2 className="text-3xl font-bold font-mono">{formatClock(clock)}</h2>
-                      <div className="text-xs text-slate-300 mt-1">{todayKey}</div>
+                      <div className="text-xs text-slate-300 mt-1">{todayKeyStr}</div>
                     </div>
-                    <div className={`px-3 py-1 rounded-full text-xs font-extrabold ${
-                      status.checkedOut ? "bg-slate-600" :
-                      status.checkedIn ? "bg-emerald-500" :
-                      isLateNow ? "bg-orange-500" : "bg-blue-500"
-                    }`}>
-                      {status.checkedOut ? "COMPLETED" : status.checkedIn ? "WORKING" : isLateNow ? "LATE START" : "READY"}
+
+                    {/* ===== status + WFA badge ===== */}
+                    <div className="flex items-center gap-2">
+                      <div className={`px-3 py-1 rounded-full text-xs font-extrabold ${
+                        status.checkedOut ? "bg-slate-600" :
+                        status.checkedIn ? "bg-emerald-500" :
+                        isLateNow ? "bg-orange-500" : "bg-blue-500"
+                      }`}>
+                        {status.checkedOut ? "COMPLETED" : status.checkedIn ? "WORKING" : isLateNow ? "LATE START" : "READY"}
+                      </div>
+
+                      {locationStatus.coords && outOfOfficeUI && wfaActiveUI && (
+                        <div className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-400 text-amber-950">
+                          WFA
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -566,6 +593,33 @@
                   )}
                 </Card>
 
+                {/* ===== WFA Banner (outside area) ===== */}
+                {locationStatus.coords && outOfOfficeUI && (
+                  <div className={`rounded-xl border p-3 shadow-sm ${
+                    wfaActiveUI ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-red-50 border-red-200 text-red-900"
+                  }`}>
+                    <div className="flex items-start gap-3">
+                      <div className={`mt-0.5 h-2.5 w-2.5 rounded-full ${wfaActiveUI ? "bg-amber-500" : "bg-red-500"}`} />
+                      <div className="flex-1">
+                        <div className="font-extrabold text-sm">
+                          {wfaActiveUI ? "WFA detected (outside office area)" : "Outside office area"}
+                        </div>
+                        <div className="text-xs opacity-80 mt-0.5">
+                          Distance: <span className="font-mono">{locationStatus.distance}m</span>
+                          {" · "}
+                          Nearest: <span className="font-semibold">{locationStatus.matchedLocation?.name || "Unknown"}</span>
+                          {" · "}
+                          Radius: <span className="font-mono">{limitUI}m</span>
+                        </div>
+                        <div className="text-xs mt-1 font-semibold">
+                          {wfaActiveUI ? "You can check-in during WFA window." : "Check-in is blocked (WFA not active)."}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ===== Monthly ===== */}
                 <Card className="p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-bold text-slate-800 flex items-center">
@@ -583,6 +637,7 @@
                   </div>
                 </Card>
 
+                {/* ===== Location Card ===== */}
                 <Card className="p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-bold text-slate-800 flex items-center">
@@ -623,8 +678,13 @@
                       </div>
 
                       {locationStatus.distance > (locationStatus.matchedLocation?.radius || 10) ? (
-                        <div className="text-xs text-red-700 bg-red-50 p-2 rounded flex items-center gap-2">
-                          <Icons.AlertTriangle size={14} /> Too far from {locationStatus.matchedLocation?.name}.
+                        <div className={`text-xs p-2 rounded flex items-center gap-2 ${
+                          wfaActiveUI ? "text-amber-800 bg-amber-50" : "text-red-700 bg-red-50"
+                        }`}>
+                          <Icons.AlertTriangle size={14} />
+                          {wfaActiveUI
+                            ? "Outside radius, but WFA active (you can check-in)."
+                            : `Too far from ${locationStatus.matchedLocation?.name}. (WFA not active)`}
                         </div>
                       ) : (
                         <div className="text-xs text-green-700 bg-green-50 p-2 rounded flex items-center gap-2">
@@ -639,6 +699,7 @@
                   )}
                 </Card>
 
+                {/* ===== Check In/Out ===== */}
                 <Card className="p-5">
                   {!status.checkedIn ? (
                     <>
@@ -682,10 +743,12 @@
                   )}
                 </Card>
 
+                {/* ===== Debug ===== */}
                 <Card className="p-5">
                   <div className="text-sm font-bold text-slate-800 mb-2">Debug</div>
                   <div className="text-xs text-slate-500 space-y-1">
                     <div>API: <span className="font-mono break-all">{API_URL}</span></div>
+                    <div>WFA: {WFA_ENABLED ? "ON" : "OFF"} ({WFA_START} → {WFA_END})</div>
                     <div>Today Row: {todayRow ? "FOUND" : "NOT FOUND"}</div>
                     <div>Logs Loaded: {logs.length}</div>
                   </div>
