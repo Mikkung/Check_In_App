@@ -20,7 +20,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useEffect, useMemo, useState, useRef } = React;
+    const { useEffect, useMemo, useState } = React;
 
     // ===== WFA WINDOW (EDIT) =====
     const WFA_ENABLED = true;
@@ -350,6 +350,8 @@
 
     function App() {
       const [loading, setLoading] = useState(false);
+      const [busyCount, setBusyCount] = useState(0);
+      const [busyText, setBusyText] = useState("Loading...");
       const [toast, setToast] = useState(null);
 
       const [currentUser, setCurrentUser] = useState(null);
@@ -399,55 +401,48 @@
       const [logs, setLogs] = useState([]);
       const [clock, setClock] = useState(new Date());
       
-      // animation loading states
+      // constate สำหรับ Animation Loading
       const [bootLoading, setBootLoading] = useState(true);
-      const [loadingText, setLoadingText] = useState("Loading...");
-      const [backgroundLoadingCount, setBackgroundLoadingCount] = useState(0);
-      const initialRoomLoadedRef = useRef(false);
-
-      const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-      const withBackgroundLoading = async (message, task, minMs = 450) => {
-        const started = Date.now();
-        setLoadingText(message || "Loading...");
-        setBackgroundLoadingCount(c => c + 1);
-        try {
-          return await task();
-        } finally {
-          const elapsed = Date.now() - started;
-          if (elapsed < minMs) await sleep(minMs - elapsed);
-          setBackgroundLoadingCount(c => Math.max(0, c - 1));
-        }
-      };
-
-      const isOverlayLoading = bootLoading || loading || locationStatus.loading || backgroundLoadingCount > 0;
-      const activeLoadingText = bootLoading
-        ? "Loading workspace..."
-        : locationStatus.loading
-          ? "Checking your location..."
-          : loadingText || "Loading...";
 
       const notify = (msg, type="ok") => {
         setToast({ msg, type });
         setTimeout(() => setToast(null), 3000);
       };
 
+      const startBusy = (message = "Loading...") => {
+        setBusyText(message);
+        setBusyCount(count => count + 1);
+      };
+
+      const stopBusy = () => {
+        setBusyCount(count => Math.max(0, count - 1));
+      };
+
+      const runBusy = async (message, work) => {
+        startBusy(message);
+        try {
+          return await work();
+        } finally {
+          stopBusy();
+        }
+      };
+
       useEffect(() => {
         let alive = true;
 
-        (async () => {
-          try {
-            const saved = localStorage.getItem("geocheck_user_v1");
-            if (saved) {
-              try {
-                const parsedUser = JSON.parse(saved);
-                if (alive) setCurrentUser(parsedUser);
-              } catch {}
-            }
-            await sleep(700);
-          } finally {
-            if (alive) setBootLoading(false);
+        try {
+          const saved = localStorage.getItem("geocheck_user_v1");
+          if (saved) {
+            try {
+              const parsedUser = JSON.parse(saved);
+              if (alive) setCurrentUser(parsedUser);
+            } catch {}
           }
-        })();
+        } finally {
+          setTimeout(() => {
+            if (alive) setBootLoading(false);
+          }, 700);
+        }
 
         return () => {
           alive = false;
@@ -466,7 +461,6 @@
 
       const getLocation = () => {
         if (locationStatus.loading) return;
-        setLoadingText("Checking your location...");
         setLocationStatus(s => ({ ...s, loading:true, error:null }));
 
         if (!navigator.geolocation) {
@@ -534,26 +528,22 @@
       };
 
       useEffect(() => {
-        if (currentUser?.id && !bootLoading) {
-          withBackgroundLoading("Loading your data...", async () => {
-            await Promise.allSettled([
-              refreshLogs(currentUser.id),
-              refreshLeaves(currentUser.id),
-              refreshLeaveTypes(),
-              refreshRoomBookings(roomDate),
-            ]);
-          }).catch(err => notify(err.message, "err"));
-          initialRoomLoadedRef.current = true;
-        }
-      }, [currentUser?.id, bootLoading]);
+        if (!currentUser?.id) return;
+        runBusy("Loading your data...", async () => {
+          await Promise.allSettled([
+            refreshLogs(currentUser.id),
+            refreshLeaves(currentUser.id),
+            refreshLeaveTypes(),
+          ]);
+        }).catch(err => notify(err.message, "err"));
+      }, [currentUser?.id]);
 
       useEffect(() => {
-        if (currentUser?.id && roomDate && !bootLoading && initialRoomLoadedRef.current) {
-          withBackgroundLoading("Loading room availability...", async () => {
-            await refreshRoomBookings(roomDate);
-          }).catch(err => notify(err.message, "err"));
-        }
-      }, [roomDate]);
+        if (!currentUser?.id || !roomDate || activeTab !== "rooms") return;
+        runBusy("Loading room availability...", async () => {
+          await refreshRoomBookings(roomDate);
+        }).catch(err => notify(err.message, "err"));
+      }, [currentUser?.id, roomDate, activeTab]);
 
       const selectedLeaveType = useMemo(() => {
         return leaveTypes.find(item => item.leave_type_code === leaveForm.leave_type_code) || null;
@@ -662,13 +652,22 @@
         return { text: "READY", cls: "bg-blue-500" };
       }, [status, isFullDayLeaveToday, isAmLeaveToday, isPmLeaveToday, isLateNow]);
 
+      const showGlobalLoader = bootLoading || loading || busyCount > 0 || locationStatus.loading;
+      const loaderMessage = locationStatus.loading
+        ? "Checking location..."
+        : bootLoading
+        ? "Loading workspace..."
+        : loading
+        ? (busyText || "Processing...")
+        : (busyText || "Loading...");
+
       const handleRegister = async () => {
         if (!authForm.name || !authForm.email || !authForm.password) {
           notify("All fields are required", "err");
           return;
         }
 
-        setLoadingText("Creating account...");
+        setBusyText("Creating account...");
         setLoading(true);
         try {
           const resp = await apiPost({
@@ -698,8 +697,7 @@
           return;
         }
 
-        setLoadingText("Creating account...");
-        setLoadingText("Signing in...");
+        setBusyText("Signing in...");
         setLoading(true);
         try {
           const resp = await apiPost({
@@ -796,7 +794,7 @@
           }
         }
 
-        setLoadingText(eventType === "IN" ? "Submitting check-in..." : "Submitting check-out...");
+        setBusyText(eventType === "IN" ? "Checking in..." : "Checking out...");
         setLoading(true);
         try {
           const email = currentUser.email;
@@ -869,7 +867,7 @@
           return;
         }
 
-        setLoadingText("Saving leave request...");
+        setBusyText("Submitting leave...");
         setLoading(true);
         try {
           const r = await apiPost({
@@ -912,7 +910,7 @@
         if (!currentUser?.email) return;
         if (!confirm("Cancel this leave request?")) return;
 
-        setLoadingText("Cancelling leave...");
+        setBusyText("Cancelling leave...");
         setLoading(true);
         try {
           const r = await apiPost({
@@ -936,7 +934,7 @@
       const handleGenerateLeaveForm = async (leaveId) => {
         if (!currentUser?.email) return;
 
-        setLoadingText("Generating leave form...");
+        setBusyText("Generating leave form...");
         setLoading(true);
         try {
           const r = await apiPost({
@@ -960,7 +958,7 @@
       const handleSendLeaveToEmail = async (leaveId) => {
         if (!currentUser?.email) return;
 
-        setLoadingText("Sending leave form to email...");
+        setBusyText("Sending leave form to email...");
         setLoading(true);
         try {
           const r = await apiPost({
@@ -991,7 +989,7 @@
           return;
         }
 
-        setLoadingText("Booking room...");
+        setBusyText("Booking room...");
         setLoading(true);
         try {
           const r = await apiPost({
@@ -1025,7 +1023,7 @@
 
         if (!confirm("Cancel this booking?")) return;
 
-        setLoadingText("Cancelling room booking...");
+        setBusyText("Cancelling room booking...");
         setLoading(true);
         try {
           const r = await apiPost({
@@ -1055,8 +1053,8 @@
             </div>
           )}
 
-          {isOverlayLoading && (
-            <div className="fixed inset-0 z-[9999] bg-slate-100/90 backdrop-blur-sm flex items-center justify-center">
+          {showGlobalLoader && (
+            <div className="fixed inset-0 z-[9999] bg-slate-100/88 backdrop-blur-sm flex items-center justify-center">
               <div className="flex flex-col items-center">
                 <div className="relative mb-5">
                   <div className="w-20 h-20 rounded-full border-4 border-red-100"></div>
@@ -1067,7 +1065,7 @@
                 </div>
 
                 <div className="text-lg font-bold text-slate-800">ISE Check-in</div>
-                <div className="text-sm text-slate-500 mt-1">{activeLoadingText}</div>
+                <div className="text-sm text-slate-500 mt-1">{loaderMessage}</div>
 
                 <div className="flex gap-1.5 mt-4">
                   <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-bounce [animation-delay:-0.3s]"></span>
@@ -1394,10 +1392,10 @@
                         <div>Leave Today: {todayActiveLeave ? `${todayActiveLeave.leave_type_code} / ${todayActiveLeave.duration_type}` : "NO"}</div>
                       </div>
                       <div className="mt-3 space-y-2">
-                        <Button variant="ghost" onClick={() => withBackgroundLoading("Refreshing logs...", () => refreshLogs(currentUser.id)).then(()=>notify("Logs refreshed")).catch(e=>notify(e.message,"err"))} disabled={loading}>
+                        <Button variant="ghost" onClick={() => runBusy("Refreshing logs...", async () => { await refreshLogs(currentUser.id); }).then(()=>notify("Logs refreshed")).catch(e=>notify(e.message,"err"))} disabled={loading}>
                           Refresh Logs from Sheet
                         </Button>
-                        <Button variant="ghost" onClick={() => withBackgroundLoading("Refreshing leaves...", () => refreshLeaves(currentUser.id)).then(()=>notify("Leaves refreshed")).catch(e=>notify(e.message,"err"))} disabled={loading}>
+                        <Button variant="ghost" onClick={() => runBusy("Refreshing leave records...", async () => { await refreshLeaves(currentUser.id); }).then(()=>notify("Leaves refreshed")).catch(e=>notify(e.message,"err"))} disabled={loading}>
                           Refresh Leaves
                         </Button>
                       </div>
@@ -1500,7 +1498,7 @@
                       <div className="flex items-center justify-between gap-3 mb-4">
                         <h3 className="font-bold text-slate-800">My Leave Records</h3>
                         <button
-                          onClick={() => withBackgroundLoading("Refreshing leave records...", () => refreshLeaves(currentUser.id)).then(()=>notify("Leave records refreshed")).catch(e=>notify(e.message,"err"))}
+                          onClick={() => runBusy("Refreshing leave records...", async () => { await refreshLeaves(currentUser.id); }).then(()=>notify("Leave records refreshed")).catch(e=>notify(e.message,"err"))}
                           className="text-xs text-blue-600 hover:underline"
                         >
                           Refresh
