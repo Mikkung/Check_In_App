@@ -20,7 +20,7 @@
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useEffect, useMemo, useState } = React;
+    const { useEffect, useMemo, useState, useRef } = React;
 
     // ===== WFA WINDOW (EDIT) =====
     const WFA_ENABLED = true;
@@ -28,9 +28,15 @@
     const WFA_END   = "2026-03-31"; // yyyy-MM-dd
 
     // ===================== EDIT HERE =====================
-    const API_URL = "https://script.google.com/macros/s/AKfycbzaXlVKN7g7TClrZzTLqO1NIwhyVfdmPDXPuyjYKpBqSRbe0Ng-93pdh8mJX1f_RMaiGg/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbzuAj75IRq_mnUytykj-VWVBF6vyCJ6j3WVt3QJARsao8tYX2XAtWsN5qrTGntgXV7IQQ/exec";
     const SECRET  = "ISE_TOKEN";
     // =====================================================
+
+    const ROOMS = [
+      "ISE Meeting Room 1 (1st Fl.)",
+      "ISE Meeting Room 2 (2nd Fl.)",
+      "ISE Meeting Room 3 (Interhub)",
+    ];
 
     // --- Icons ---
     const Icon = ({ path, size = 24, className = "" }) => (
@@ -49,6 +55,9 @@
       LogIn: (p) => <Icon {...p} path={<><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></>} />,
       UserPlus: (p) => <Icon {...p} path={<><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></>} />,
       BarChart: (p) => <Icon {...p} path={<><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></>} />,
+      CalendarDays: (p) => <Icon {...p} path={<><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></>} />,
+      DoorOpen: (p) => <Icon {...p} path={<><path d="M14 4v16"/><path d="M4 4h10"/><path d="M4 20h10"/><path d="M4 4v16"/><path d="M14 12h6"/></>} />,
+      XCircle: (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></>} />,
     };
 
     // --- Utils ---
@@ -64,12 +73,132 @@
     };
 
     const pad2 = (n) => String(n).padStart(2, "0");
-    const dateKey = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; // yyyy-MM-dd
-    const isWfaActive = (ymd) => {
-      if (!WFA_ENABLED) return false;
-      return (ymd >= WFA_START && ymd <= WFA_END);
-    };
+    const dateKey = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+    const isWfaActive = (ymd) => WFA_ENABLED && (ymd >= WFA_START && ymd <= WFA_END);
     const formatClock = (d) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const timeToMinutes = (hhmm) => {
+      const m = String(hhmm || "").match(/^(\d{2}):(\d{2})$/);
+      if (!m) return null;
+      return Number(m[1]) * 60 + Number(m[2]);
+    };
+    const normalizeHHMM = (value) => {
+      if (value == null || value === "") return "";
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return `${pad2(value.getHours())}:${pad2(value.getMinutes())}`;
+      }
+      if (typeof value === "number" && value >= 0 && value < 1) {
+        const totalMinutes = Math.round(value * 24 * 60) % (24 * 60);
+        return `${pad2(Math.floor(totalMinutes / 60))}:${pad2(totalMinutes % 60)}`;
+      }
+      const s = String(value).trim();
+      let m = s.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+      if (m) return `${pad2(Number(m[1]))}:${m[2]}`;
+
+      const asNumber = Number(s);
+      if (!Number.isNaN(asNumber) && asNumber >= 0 && asNumber < 1) {
+        const totalMinutes = Math.round(asNumber * 24 * 60) % (24 * 60);
+        return `${pad2(Math.floor(totalMinutes / 60))}:${pad2(totalMinutes % 60)}`;
+      }
+
+      const d = new Date(s);
+      if (!Number.isNaN(d.getTime())) {
+        return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+      }
+      return s;
+    };
+    const formatTimeLabel = (value) => normalizeHHMM(value) || "-";
+    const formatMinutesAsDuration = (mins) => {
+      if (!Number.isFinite(mins) || mins <= 0) return "0h";
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      if (h && m) return `${h}h ${m}m`;
+      if (h) return `${h}h`;
+      return `${m}m`;
+    };
+    const buildPhotoSrc = (photoBase64, photoMime = "") => {
+      const value = String(photoBase64 || "").trim();
+      if (!value) return "";
+      if (value.startsWith("data:image/")) return value;
+      return `data:${photoMime || "image/jpeg"};base64,${value}`;
+    };
+    const getInitials = (name) => {
+      const parts = String(name || "").trim().split(/\s+/).filter(Boolean).slice(0, 2);
+      if (!parts.length) return "?";
+      return parts.map(p => p[0].toUpperCase()).join("");
+    };
+    const ROOM_TIMELINE_START = 8 * 60;
+    const ROOM_TIMELINE_END = 20 * 60;
+    const ROOM_TIMELINE_LABELS = [8, 10, 12, 14, 16, 18, 20];
+    const buildTimelineBlocks = (items) => {
+      const sorted = [...items]
+        .map(item => ({
+          ...item,
+          startMin: timeToMinutes(normalizeHHMM(item.start_time)),
+          endMin: timeToMinutes(normalizeHHMM(item.end_time)),
+        }))
+        .filter(item => item.startMin != null && item.endMin != null && item.endMin > item.startMin)
+        .sort((a, b) => a.startMin - b.startMin);
+
+      const lanes = [];
+      return sorted.map(item => {
+        let laneIndex = 0;
+        while (lanes[laneIndex] != null && lanes[laneIndex] > item.startMin) laneIndex += 1;
+        lanes[laneIndex] = item.endMin;
+        return { ...item, laneIndex };
+      });
+    };
+
+    const RoomTimeline = ({ items }) => {
+      const blocks = buildTimelineBlocks(items);
+      const laneCount = Math.max(1, ...blocks.map(b => b.laneIndex + 1), 1);
+      const totalRange = ROOM_TIMELINE_END - ROOM_TIMELINE_START;
+
+      return (
+        <div className="mt-3">
+          <div className="relative rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
+            <div className="absolute inset-0 flex">
+              {Array.from({ length: 12 }).map((_, idx) => (
+                <div key={idx} className={`flex-1 border-r ${idx === 11 ? "border-r-0" : "border-slate-200"}`} />
+              ))}
+            </div>
+
+            <div className="relative" style={{ height: `${Math.max(56, 18 + laneCount * 26)}px` }}>
+              {blocks.map(block => {
+                const clampedStart = Math.max(block.startMin, ROOM_TIMELINE_START);
+                const clampedEnd = Math.min(block.endMin, ROOM_TIMELINE_END);
+                const left = ((clampedStart - ROOM_TIMELINE_START) / totalRange) * 100;
+                const width = Math.max(8, ((clampedEnd - clampedStart) / totalRange) * 100);
+                return (
+                  <div
+                    key={block.booking_id}
+                    className="absolute rounded-lg bg-amber-500/90 text-white shadow-sm border border-amber-600 px-2 py-1 overflow-hidden"
+                    style={{
+                      left: `${left}%`,
+                      width: `${width}%`,
+                      top: `${10 + block.laneIndex * 26}px`,
+                      minHeight: "22px",
+                    }}
+                    title={`${formatTimeLabel(block.start_time)} - ${formatTimeLabel(block.end_time)} | ${block.purpose}`}
+                  >
+                    <div className="text-[10px] font-bold whitespace-nowrap">
+                      {formatTimeLabel(block.start_time)} - {formatTimeLabel(block.end_time)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-7 text-[10px] text-slate-500 mt-2 px-1">
+            {ROOM_TIMELINE_LABELS.map(hour => (
+              <div key={hour} className={hour === ROOM_TIMELINE_LABELS[ROOM_TIMELINE_LABELS.length - 1] ? "text-right" : "text-left"}>
+                {`${pad2(hour)}:00`}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
 
     function getDeviceId() {
       let id = localStorage.getItem("geocheck_device_id");
@@ -80,7 +209,6 @@
       return id;
     }
 
-    // IMPORTANT: don't set Content-Type header to avoid preflight
     async function apiPost(payload) {
       const res = await fetch(API_URL, {
         method: "POST",
@@ -108,7 +236,7 @@
       <div className={`bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden ${className}`}>{children}</div>
     );
 
-    const Input = ({ label, type="text", value, onChange, placeholder }) => (
+    const Input = ({ label, type="text", value, onChange, placeholder, min }) => (
       <div className="mb-4">
         <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>
         <input
@@ -116,6 +244,7 @@
           value={value}
           onChange={onChange}
           placeholder={placeholder}
+          min={min}
           className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
@@ -137,7 +266,88 @@
       );
     };
 
-    // ===================== APP =====================
+    const Avatar = ({ user, size = 44, className = "" }) => {
+      const [broken, setBroken] = useState(false);
+      const src = !broken ? buildPhotoSrc(user?.photo_base64, user?.photo_mime) : "";
+      const initials = getInitials(user?.name);
+      if (src) {
+        return (
+          <img
+            src={src}
+            alt={user?.name || "Profile"}
+            onError={() => setBroken(true)}
+            className={`rounded-full object-cover border border-slate-200 bg-white ${className}`}
+            style={{ width: `${size}px`, height: `${size}px` }}
+          />
+        );
+      }
+      return (
+        <div
+          className={`rounded-full bg-slate-800 text-white font-bold flex items-center justify-center border border-slate-200 ${className}`}
+          style={{ width: `${size}px`, height: `${size}px`, fontSize: `${Math.max(14, size * 0.33)}px` }}
+        >
+          {initials}
+        </div>
+      );
+    };
+
+    const isDateInRange = (dateStr, startDate, endDate) => {
+      if (!dateStr || !startDate || !endDate) return false;
+      return dateStr >= startDate && dateStr <= endDate;
+    };
+
+    const isWeekendDateStr = (dateStr) => {
+      if (!dateStr) return false;
+      const d = new Date(`${dateStr}T00:00:00`);
+      const day = d.getDay();
+      return day === 0 || day === 6;
+    };
+
+    const countBusinessDaysPreview = (startDate, endDate) => {
+      if (!startDate || !endDate || endDate < startDate) return 0;
+      let count = 0;
+      let cursor = new Date(`${startDate}T00:00:00`);
+      const end = new Date(`${endDate}T00:00:00`);
+      while (cursor <= end) {
+        const day = cursor.getDay();
+        if (day !== 0 && day !== 6) count += 1;
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return count;
+    };
+
+    const formatDurationTypeLabel = (value) => {
+      const map = {
+        FULL_DAY: "Full Day",
+        AM: "Morning (AM)",
+        PM: "Afternoon (PM)",
+        MULTI_DAY: "Multiple Days",
+      };
+      return map[value] || value || "-";
+    };
+
+    const getAllowedDurationOptions = (leaveType) => {
+      const allowHalfDay = String(leaveType?.allow_half_day || "").toUpperCase() === "TRUE";
+      return allowHalfDay
+        ? ["FULL_DAY", "AM", "PM", "MULTI_DAY"]
+        : ["FULL_DAY", "MULTI_DAY"];
+    };
+
+    const doesLeaveCoverDate = (item, dateStr) => {
+      if (!item || String(item.record_status || "").toUpperCase() !== "ACTIVE") return false;
+      const startDate = item.start_date;
+      const endDate = item.end_date || item.start_date;
+      return isDateInRange(dateStr, startDate, endDate);
+    };
+
+    const getLeavePreviewDays = (form) => {
+      if (!form?.start_date || !form?.end_date) return 0;
+      if (form.duration_type === "AM" || form.duration_type === "PM") return 0.5;
+      if (form.duration_type === "FULL_DAY") return 1;
+      if (form.duration_type === "MULTI_DAY") return countBusinessDaysPreview(form.start_date, form.end_date);
+      return 0;
+    };
+
     function App() {
       const [loading, setLoading] = useState(false);
       const [toast, setToast] = useState(null);
@@ -146,6 +356,30 @@
       const [authMode, setAuthMode] = useState("login");
       const [authForm, setAuthForm] = useState({ name:"", email:"", password:"" });
       const [lateReason, setLateReason] = useState("");
+      const [activeTab, setActiveTab] = useState("attendance");
+
+            const [myLeaves, setMyLeaves] = useState([]);
+      const [leaveTypes, setLeaveTypes] = useState([]);
+      const [leaveForm, setLeaveForm] = useState({
+        leave_type_code: "",
+        duration_type: "FULL_DAY",
+        start_date: dateKey(new Date()),
+        end_date: dateKey(new Date()),
+        reason: "",
+        attachment_url: "",
+        handover_note: "",
+      });
+
+      const [roomDate, setRoomDate] = useState(dateKey(new Date()));
+      const [roomBookings, setRoomBookings] = useState([]);
+      const [roomForm, setRoomForm] = useState({
+        room_name: ROOMS[0],
+        book_date: dateKey(new Date()),
+        start_time: "09:00",
+        end_time: "10:00",
+        purpose: "",
+        note: "",
+      });
 
       const [config] = useState({
         startTime: "08:31",
@@ -164,18 +398,60 @@
 
       const [logs, setLogs] = useState([]);
       const [clock, setClock] = useState(new Date());
+      
+      // animation loading states
+      const [bootLoading, setBootLoading] = useState(true);
+      const [loadingText, setLoadingText] = useState("Loading...");
+      const [backgroundLoadingCount, setBackgroundLoadingCount] = useState(0);
+      const initialRoomLoadedRef = useRef(false);
+
+      const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+      const withBackgroundLoading = async (message, task, minMs = 450) => {
+        const started = Date.now();
+        setLoadingText(message || "Loading...");
+        setBackgroundLoadingCount(c => c + 1);
+        try {
+          return await task();
+        } finally {
+          const elapsed = Date.now() - started;
+          if (elapsed < minMs) await sleep(minMs - elapsed);
+          setBackgroundLoadingCount(c => Math.max(0, c - 1));
+        }
+      };
+
+      const isOverlayLoading = bootLoading || loading || locationStatus.loading || backgroundLoadingCount > 0;
+      const activeLoadingText = bootLoading
+        ? "Loading workspace..."
+        : locationStatus.loading
+          ? "Checking your location..."
+          : loadingText || "Loading...";
 
       const notify = (msg, type="ok") => {
         setToast({ msg, type });
         setTimeout(() => setToast(null), 3000);
       };
 
-      // load session
       useEffect(() => {
-        const saved = localStorage.getItem("geocheck_user_v1");
-        if (saved) {
-          try { setCurrentUser(JSON.parse(saved)); } catch {}
-        }
+        let alive = true;
+
+        (async () => {
+          try {
+            const saved = localStorage.getItem("geocheck_user_v1");
+            if (saved) {
+              try {
+                const parsedUser = JSON.parse(saved);
+                if (alive) setCurrentUser(parsedUser);
+              } catch {}
+            }
+            await sleep(700);
+          } finally {
+            if (alive) setBootLoading(false);
+          }
+        })();
+
+        return () => {
+          alive = false;
+        };
       }, []);
 
       useEffect(() => {
@@ -183,15 +459,14 @@
         else localStorage.removeItem("geocheck_user_v1");
       }, [currentUser]);
 
-      // clock
       useEffect(() => {
         const t = setInterval(() => setClock(new Date()), 1000);
         return () => clearInterval(t);
       }, []);
 
-      // geolocation
       const getLocation = () => {
         if (locationStatus.loading) return;
+        setLoadingText("Checking your location...");
         setLocationStatus(s => ({ ...s, loading:true, error:null }));
 
         if (!navigator.geolocation) {
@@ -230,27 +505,105 @@
         if (currentUser && !locationStatus.coords && !locationStatus.loading) getLocation();
       }, [currentUser]);
 
-      // fetch logs
       const refreshLogs = async (emp_id) => {
         const r = await apiPost({ action:"fetchLogs", emp_id });
         if (!r.ok) throw new Error(r.error || "fetchLogs failed");
         setLogs(r.logs || []);
       };
 
-      useEffect(() => {
-        if (currentUser?.id) {
-          refreshLogs(currentUser.id).catch(err => notify(err.message, "err"));
-        }
-      }, [currentUser?.id]);
+      const refreshLeaves = async (emp_id) => {
+        const r = await apiPost({ action:"fetchMyLeaves", emp_id });
+        if (!r.ok) throw new Error(r.error || "fetchMyLeaves failed");
+        setMyLeaves(r.leaves || []);
+      };
 
-      // derived
+      const refreshLeaveTypes = async () => {
+        const r = await apiPost({ action:"fetchLeaveTypes" });
+        if (!r.ok) throw new Error(r.error || "fetchLeaveTypes failed");
+        setLeaveTypes(r.leave_types || []);
+      };
+
+      const refreshRoomBookings = async (book_date) => {
+        const r = await apiPost({ action:"fetchRoomBookings", book_date });
+        if (!r.ok) throw new Error(r.error || "fetchRoomBookings failed");
+        setRoomBookings((r.bookings || []).map(b => ({
+          ...b,
+          start_time: normalizeHHMM(b.start_time),
+          end_time: normalizeHHMM(b.end_time),
+        })));
+      };
+
+      useEffect(() => {
+        if (currentUser?.id && !bootLoading) {
+          withBackgroundLoading("Loading your data...", async () => {
+            await Promise.allSettled([
+              refreshLogs(currentUser.id),
+              refreshLeaves(currentUser.id),
+              refreshLeaveTypes(),
+              refreshRoomBookings(roomDate),
+            ]);
+          }).catch(err => notify(err.message, "err"));
+          initialRoomLoadedRef.current = true;
+        }
+      }, [currentUser?.id, bootLoading]);
+
+      useEffect(() => {
+        if (currentUser?.id && roomDate && !bootLoading && initialRoomLoadedRef.current) {
+          withBackgroundLoading("Loading room availability...", async () => {
+            await refreshRoomBookings(roomDate);
+          }).catch(err => notify(err.message, "err"));
+        }
+      }, [roomDate]);
+
+      const selectedLeaveType = useMemo(() => {
+        return leaveTypes.find(item => item.leave_type_code === leaveForm.leave_type_code) || null;
+      }, [leaveTypes, leaveForm.leave_type_code]);
+
+      const allowedDurationOptions = useMemo(() => {
+        return getAllowedDurationOptions(selectedLeaveType);
+      }, [selectedLeaveType]);
+
+      useEffect(() => {
+        if (!leaveTypes.length) return;
+        setLeaveForm(prev => {
+          const selected = leaveTypes.find(item => item.leave_type_code === prev.leave_type_code) || leaveTypes[0];
+          const allowed = getAllowedDurationOptions(selected);
+          const nextDuration = allowed.includes(prev.duration_type) ? prev.duration_type : allowed[0];
+          return {
+            ...prev,
+            leave_type_code: selected?.leave_type_code || "",
+            duration_type: nextDuration,
+          };
+        });
+      }, [leaveTypes]);
+
+      useEffect(() => {
+        setLeaveForm(prev => {
+          if (prev.duration_type === "AM" || prev.duration_type === "PM" || prev.duration_type === "FULL_DAY") {
+            return { ...prev, end_date: prev.start_date };
+          }
+          return prev;
+        });
+      }, [leaveForm.duration_type, leaveForm.start_date]);
+
+      const leavePreviewDays = useMemo(() => getLeavePreviewDays(leaveForm), [leaveForm]);
+
       const todayKeyStr = dateKey(new Date());
       const wfaActiveUI = isWfaActive(todayKeyStr);
-
       const limitUI = locationStatus.matchedLocation?.radius || 10;
       const outOfOfficeUI = locationStatus.distance != null && locationStatus.distance > limitUI;
 
-      const todayRow = useMemo(() => (logs.find(r => r.date === todayKeyStr) || null), [logs, todayKeyStr]);
+      const todayRow = useMemo(() => {
+        return logs.find(r => r.date === todayKeyStr) || null;
+      }, [logs, todayKeyStr]);
+
+      const todayActiveLeave = useMemo(() => {
+        return myLeaves.find(item => doesLeaveCoverDate(item, todayKeyStr)) || null;
+      }, [myLeaves, todayKeyStr]);
+
+      const isFullDayLeaveToday = ["FULL_DAY", "MULTI_DAY"].includes(String(todayActiveLeave?.duration_type || ""));
+      const isAmLeaveToday = String(todayActiveLeave?.duration_type || "") === "AM";
+      const isPmLeaveToday = String(todayActiveLeave?.duration_type || "") === "PM";
 
       const status = useMemo(() => {
         const checkedIn  = !!(todayRow && todayRow.checkin_time && todayRow.checkin_time !== "-");
@@ -260,6 +613,8 @@
           checkedOut,
           checkInTime: todayRow?.checkin_time || null,
           checkOutTime: todayRow?.checkout_time || null,
+          attendanceStatus: todayRow?.attendance_status || "",
+          attendanceRemark: todayRow?.attendance_remark || "",
         };
       }, [todayRow]);
 
@@ -288,13 +643,32 @@
         return clock > ws;
       }, [clock, config.startTime]);
 
-      // auth
+      const requireLateReason = useMemo(() => {
+        if (!isLateNow) return false;
+        if (!isAmLeaveToday) return true;
+        const nowMin = clock.getHours() * 60 + clock.getMinutes();
+        return nowMin > 13 * 60;
+      }, [isLateNow, isAmLeaveToday, clock]);
+
+      const statusBadge = useMemo(() => {
+        if (status.attendanceStatus === "LEAVE_FULL_DAY") return { text: "ON LEAVE", cls: "bg-violet-500" };
+        if (status.attendanceStatus === "ABSENT") return { text: "ABSENT", cls: "bg-red-500" };
+        if (status.checkedOut) return { text: "COMPLETED", cls: "bg-slate-600" };
+        if (status.checkedIn) return { text: "WORKING", cls: "bg-emerald-500" };
+        if (isFullDayLeaveToday) return { text: "ON LEAVE", cls: "bg-violet-500" };
+        if (isAmLeaveToday && !status.checkedIn) return { text: "AM LEAVE", cls: "bg-violet-500" };
+        if (isPmLeaveToday && !status.checkedIn) return { text: "PM LEAVE", cls: "bg-violet-500" };
+        if (isLateNow) return { text: "LATE START", cls: "bg-orange-500" };
+        return { text: "READY", cls: "bg-blue-500" };
+      }, [status, isFullDayLeaveToday, isAmLeaveToday, isPmLeaveToday, isLateNow]);
+
       const handleRegister = async () => {
         if (!authForm.name || !authForm.email || !authForm.password) {
           notify("All fields are required", "err");
           return;
         }
 
+        setLoadingText("Creating account...");
         setLoading(true);
         try {
           const resp = await apiPost({
@@ -324,6 +698,8 @@
           return;
         }
 
+        setLoadingText("Creating account...");
+        setLoadingText("Signing in...");
         setLoading(true);
         try {
           const resp = await apiPost({
@@ -354,14 +730,22 @@
         if (confirm("Log out?")) {
           setCurrentUser(null);
           setLogs([]);
+          setMyLeaves([]);
+          setLeaveTypes([]);
+          setRoomBookings([]);
           setLateReason("");
+          setActiveTab("attendance");
           setLocationStatus({ coords:null, matchedLocation:null, distance:null, error:null, loading:false });
         }
       };
 
-      // check-in/out (WFA minimal)
-      const handleAction = async (eventType) => {
+            const handleAction = async (eventType) => {
         if (!currentUser?.email) { notify("No user email", "err"); return; }
+
+        if (isFullDayLeaveToday && eventType === "IN") {
+          notify("You are on full-day leave today", "err");
+          return;
+        }
 
         if (!locationStatus.coords || locationStatus.distance == null) {
           notify("Please verify your location first", "err");
@@ -372,7 +756,6 @@
         const limit = locationStatus.matchedLocation?.radius || 10;
         const wfaActive = isWfaActive(dateKey(new Date()));
 
-        // Distance check only for IN (OUT ไม่บังคับระยะ)
         if (eventType === "IN" && locationStatus.distance > limit && !wfaActive) {
           notify(`Too far from ${locationStatus.matchedLocation?.name || "office"} (WFA not active)`, "err");
           return;
@@ -382,25 +765,38 @@
         if (eventType === "OUT" && !status.checkedIn) { notify("No check-in found for today", "err"); return; }
         if (eventType === "OUT" && status.checkedOut) { notify("Already checked out today", "err"); return; }
 
-        // late calc (only IN)
         let lateMinutes = 0;
         let latecheck = "FALSE";
         let reason = "-";
 
         if (eventType === "IN") {
           const now = new Date();
+          const nowMin = now.getHours() * 60 + now.getMinutes();
           const [sh, sm] = config.startTime.split(":").map(Number);
-          const ws = new Date(now);
-          ws.setHours(sh, sm, 0, 0);
+          const startMin = sh * 60 + sm;
 
-          if (now > ws) {
-            lateMinutes = Math.floor((now - ws) / 60000);
-            latecheck = "TRUE";
-            reason = (lateReason || "").trim();
-            if (!reason) { notify("Late reason required for Check-In", "err"); return; }
+          if (isAmLeaveToday) {
+            const amCutoff = 13 * 60;
+            if (nowMin > amCutoff) {
+              lateMinutes = nowMin - amCutoff;
+              latecheck = "TRUE";
+              reason = (todayActiveLeave?.reason || "AM leave - returned after 13:00").trim();
+            } else {
+              lateMinutes = 0;
+              latecheck = "FALSE";
+              reason = (todayActiveLeave?.reason || "AM Leave").trim();
+            }
+          } else {
+            if (nowMin > startMin) {
+              lateMinutes = nowMin - startMin;
+              latecheck = "TRUE";
+              reason = (lateReason || "").trim();
+              if (!reason) { notify("Late reason required for Check-In", "err"); return; }
+            }
           }
         }
 
+        setLoadingText(eventType === "IN" ? "Submitting check-in..." : "Submitting check-out...");
         setLoading(true);
         try {
           const email = currentUser.email;
@@ -408,9 +804,7 @@
 
           if (eventType === "IN") {
             const inOffice = locationStatus.distance <= limit;
-            const locationLabel = inOffice
-              ? (locationStatus.matchedLocation?.name || "-")
-              : "WFA_REMOTE";
+            const locationLabel = inOffice ? (locationStatus.matchedLocation?.name || "-") : "WFA_REMOTE";
 
             const resp = await apiPost({
               action: "log",
@@ -433,7 +827,6 @@
             return;
           }
 
-          // OUT
           const sessionId = localStorage.getItem(`geocheck_session_${email}`) || "";
           const resp = await apiPost({
             action: "log",
@@ -448,7 +841,207 @@
           localStorage.removeItem(`geocheck_session_${email}`);
           notify("Successfully Checked Out!");
           if (currentUser?.id) await refreshLogs(currentUser.id);
+        } finally {
+          setLoading(false);
+        }
+      };
 
+            const handleSubmitLeave = async () => {
+        if (!currentUser?.email) return;
+        if (!leaveForm.leave_type_code) {
+          notify("Please select leave type", "err");
+          return;
+        }
+        if (!leaveForm.start_date || !leaveForm.end_date) {
+          notify("Please select leave dates", "err");
+          return;
+        }
+        if (!leaveForm.reason.trim()) {
+          notify("Please enter reason", "err");
+          return;
+        }
+        if (leaveForm.end_date < leaveForm.start_date) {
+          notify("End date must be on or after start date", "err");
+          return;
+        }
+        if ((leaveForm.duration_type === "AM" || leaveForm.duration_type === "PM") && leaveForm.start_date !== leaveForm.end_date) {
+          notify("AM/PM leave must be a single date", "err");
+          return;
+        }
+
+        setLoadingText("Saving leave request...");
+        setLoading(true);
+        try {
+          const r = await apiPost({
+            action: "submitLeave",
+            email: currentUser.email,
+            device_id: getDeviceId(),
+            leave_type_code: leaveForm.leave_type_code,
+            duration_type: leaveForm.duration_type,
+            start_date: leaveForm.start_date,
+            end_date: leaveForm.end_date,
+            reason: leaveForm.reason,
+            attachment_url: leaveForm.attachment_url,
+            handover_note: leaveForm.handover_note,
+          });
+
+          if (!r.ok) {
+            notify(r.error || "Leave request failed", "err");
+            return;
+          }
+
+          const firstType = leaveTypes[0];
+          setLeaveForm({
+            leave_type_code: firstType?.leave_type_code || "",
+            duration_type: "FULL_DAY",
+            start_date: dateKey(new Date()),
+            end_date: dateKey(new Date()),
+            reason: "",
+            attachment_url: "",
+            handover_note: "",
+          });
+          notify("Leave saved");
+          await refreshLeaves(currentUser.id);
+          await refreshLogs(currentUser.id);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleCancelLeave = async (leaveId) => {
+        if (!currentUser?.email) return;
+        if (!confirm("Cancel this leave request?")) return;
+
+        setLoadingText("Cancelling leave...");
+        setLoading(true);
+        try {
+          const r = await apiPost({
+            action: "cancelLeave",
+            email: currentUser.email,
+            device_id: getDeviceId(),
+            leave_id: leaveId,
+          });
+          if (!r.ok) {
+            notify(r.error || "Unable to cancel leave", "err");
+            return;
+          }
+          notify("Leave cancelled");
+          await refreshLeaves(currentUser.id);
+          await refreshLogs(currentUser.id);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleGenerateLeaveForm = async (leaveId) => {
+        if (!currentUser?.email) return;
+
+        setLoadingText("Generating leave form...");
+        setLoading(true);
+        try {
+          const r = await apiPost({
+            action: "generateLeaveForm",
+            email: currentUser.email,
+            device_id: getDeviceId(),
+            leave_id: leaveId,
+          });
+          if (!r.ok) {
+            notify(r.error || "Unable to generate form", "err");
+            return;
+          }
+          notify("Leave form generated");
+          await refreshLeaves(currentUser.id);
+          if (r.form_file_url) window.open(r.form_file_url, "_blank");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleSendLeaveToEmail = async (leaveId) => {
+        if (!currentUser?.email) return;
+
+        setLoadingText("Sending leave form to email...");
+        setLoading(true);
+        try {
+          const r = await apiPost({
+            action: "sendLeaveToEmail",
+            email: currentUser.email,
+            device_id: getDeviceId(),
+            leave_id: leaveId,
+          });
+          if (!r.ok) {
+            notify(r.error || "Unable to send email", "err");
+            return;
+          }
+          notify("Leave form sent to your email");
+          await refreshLeaves(currentUser.id);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleBookRoom = async () => {
+        if (!currentUser?.email) return;
+        if (!roomForm.purpose.trim()) {
+          notify("Please enter purpose of use", "err");
+          return;
+        }
+        if (timeToMinutes(roomForm.start_time) == null || timeToMinutes(roomForm.end_time) == null || timeToMinutes(roomForm.start_time) >= timeToMinutes(roomForm.end_time)) {
+          notify("Please choose a valid time range", "err");
+          return;
+        }
+
+        setLoadingText("Booking room...");
+        setLoading(true);
+        try {
+          const r = await apiPost({
+            action: "bookRoom",
+            email: currentUser.email,
+            device_id: getDeviceId(),
+            room_name: roomForm.room_name,
+            book_date: roomForm.book_date,
+            start_time: roomForm.start_time,
+            end_time: roomForm.end_time,
+            purpose: roomForm.purpose,
+            note: roomForm.note,
+          });
+
+          if (!r.ok) {
+            notify(r.error || "Room booking failed", "err");
+            return;
+          }
+
+          notify("Room booked");
+          setRoomDate(roomForm.book_date);
+          await refreshRoomBookings(roomForm.book_date);
+          setRoomForm(s => ({ ...s, purpose: "", note: "" }));
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      const handleCancelRoom = async (bookingId) => {
+        if (!currentUser?.email) return;
+
+        if (!confirm("Cancel this booking?")) return;
+
+        setLoadingText("Cancelling room booking...");
+        setLoading(true);
+        try {
+          const r = await apiPost({
+            action: "cancelRoomBooking",
+            email: currentUser.email,
+            device_id: getDeviceId(),
+            booking_id: bookingId,
+          });
+
+          if (!r.ok) {
+            notify(r.error || "Cancel failed", "err");
+            return;
+          }
+
+          notify("Booking cancelled");
+          await refreshRoomBookings(roomDate);
         } finally {
           setLoading(false);
         }
@@ -457,9 +1050,31 @@
       return (
         <div className="min-h-screen bg-slate-100 pb-12">
           {toast && (
-            <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-lg shadow-lg text-white font-semibold
-              ${toast.type === "err" ? "bg-red-600" : "bg-slate-800"}`}>
+            <div className={`fixed top-4 right-4 z-50 px-5 py-3 rounded-lg shadow-lg text-white font-semibold ${toast.type === "err" ? "bg-red-600" : "bg-slate-800"}`}>
               {toast.msg}
+            </div>
+          )}
+
+          {isOverlayLoading && (
+            <div className="fixed inset-0 z-[9999] bg-slate-100/90 backdrop-blur-sm flex items-center justify-center">
+              <div className="flex flex-col items-center">
+                <div className="relative mb-5">
+                  <div className="w-20 h-20 rounded-full border-4 border-red-100"></div>
+                  <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-red-600 animate-spin"></div>
+                  <div className="absolute inset-3 bg-white rounded-full flex items-center justify-center text-red-600 font-extrabold text-lg shadow-sm">
+                    ISE
+                  </div>
+                </div>
+
+                <div className="text-lg font-bold text-slate-800">ISE Check-in</div>
+                <div className="text-sm text-slate-500 mt-1">{activeLoadingText}</div>
+
+                <div className="flex gap-1.5 mt-4">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-bounce [animation-delay:-0.3s]"></span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-bounce [animation-delay:-0.15s]"></span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-bounce"></span>
+                </div>
+              </div>
             </div>
           )}
 
@@ -507,13 +1122,9 @@
                   />
 
                   {authMode === "login" ? (
-                    <Button onClick={handleLogin} disabled={loading}>
-                      {loading ? "Signing in..." : "Sign In"}
-                    </Button>
+                    <Button onClick={handleLogin} disabled={loading}>{loading ? "Signing in..." : "Sign In"}</Button>
                   ) : (
-                    <Button onClick={handleRegister} disabled={loading} variant="success">
-                      {loading ? "Creating..." : "Create Account"}
-                    </Button>
+                    <Button onClick={handleRegister} disabled={loading} variant="success">{loading ? "Creating..." : "Create Account"}</Button>
                   )}
 
                   <div className="mt-5 pt-5 border-t border-slate-100 text-center">
@@ -527,9 +1138,7 @@
                       {authMode === "login" ? "Register New Employee" : "Back to Login"}
                     </button>
 
-                    <div className="text-xs text-slate-400 mt-4">
-                      Uses Apps Script API (Option A). No CSV fetch.
-                    </div>
+                    <div className="text-xs text-slate-400 mt-4">Uses Apps Script API</div>
                   </div>
                 </Card>
               </div>
@@ -546,6 +1155,7 @@
                       <div className="text-sm font-semibold text-slate-700">{currentUser.name}</div>
                       <div className="text-xs text-slate-400">ID: {currentUser.id || "-"}</div>
                     </div>
+                    <Avatar user={currentUser} size={38} className="shadow-sm" />
                     <button
                       onClick={handleLogout}
                       className="p-2 bg-slate-50 text-slate-500 rounded-full hover:bg-red-50 hover:text-red-600 transition"
@@ -558,211 +1168,565 @@
               </header>
 
               <main className="max-w-md mx-auto px-4 py-6 space-y-6">
-                {/* ===== Today Card ===== */}
-                <Card className="bg-gradient-to-br from-slate-800 to-slate-900 text-white p-6 shadow-lg">
-                  <div className="flex justify-between items-end">
-                    <div>
-                      <p className="text-slate-300 text-sm font-semibold mb-1">Today's Status</p>
-                      <h2 className="text-3xl font-bold font-mono">{formatClock(clock)}</h2>
-                      <div className="text-xs text-slate-300 mt-1">{todayKeyStr}</div>
-                    </div>
-
-                    {/* ===== status + WFA badge ===== */}
-                    <div className="flex items-center gap-2">
-                      <div className={`px-3 py-1 rounded-full text-xs font-extrabold ${
-                        status.checkedOut ? "bg-slate-600" :
-                        status.checkedIn ? "bg-emerald-500" :
-                        isLateNow ? "bg-orange-500" : "bg-blue-500"
-                      }`}>
-                        {status.checkedOut ? "COMPLETED" : status.checkedIn ? "WORKING" : isLateNow ? "LATE START" : "READY"}
-                      </div>
-
-                      {locationStatus.coords && outOfOfficeUI && wfaActiveUI && (
-                        <div className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-400 text-amber-950">
-                          WFA
-                        </div>
-                      )}
-                    </div>
+                <Card className="p-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      onClick={() => setActiveTab("attendance")}
+                      className={`px-3 py-2 rounded-lg text-sm font-semibold ${activeTab === "attendance" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}
+                    >
+                      Attendance
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("leave")}
+                      className={`px-3 py-2 rounded-lg text-sm font-semibold ${activeTab === "leave" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}
+                    >
+                      Leave
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("rooms")}
+                      className={`px-3 py-2 rounded-lg text-sm font-semibold ${activeTab === "rooms" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-600"}`}
+                    >
+                      Meeting Room
+                    </button>
                   </div>
-
-                  {status.checkedIn && (
-                    <div className="mt-4 pt-4 border-t border-white/10 flex gap-4 text-xs text-slate-200">
-                      <div>In: <span className="text-white font-mono">{status.checkInTime}</span></div>
-                      {status.checkedOut && <div>Out: <span className="text-white font-mono">{status.checkOutTime}</span></div>}
-                    </div>
-                  )}
                 </Card>
 
-                {/* ===== WFA Banner (outside area) ===== */}
-                {locationStatus.coords && outOfOfficeUI && (
-                  <div className={`rounded-xl border p-3 shadow-sm ${
-                    wfaActiveUI ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-red-50 border-red-200 text-red-900"
-                  }`}>
-                    <div className="flex items-start gap-3">
-                      <div className={`mt-0.5 h-2.5 w-2.5 rounded-full ${wfaActiveUI ? "bg-amber-500" : "bg-red-500"}`} />
-                      <div className="flex-1">
+                <Card className="p-4 bg-gradient-to-r from-white to-slate-50">
+                  <div className="flex items-center gap-4">
+                    <Avatar user={currentUser} size={56} className="shadow-sm" />
+                    <div className="min-w-0">
+                      <div className="text-sm text-slate-500">Signed in as</div>
+                      <div className="text-base font-bold text-slate-800 truncate">{currentUser.name}</div>
+                      <div className="text-xs text-slate-500 truncate">{currentUser.email}</div>
+                      <div className="text-xs text-slate-400 mt-1">Employee ID: {currentUser.id || "-"}</div>
+                    </div>
+                  </div>
+                </Card>
+
+                {activeTab === "attendance" && (
+                  <>
+                    <Card className="bg-gradient-to-br from-slate-800 to-slate-900 text-white p-6 shadow-lg">
+                      <div className="flex justify-between items-end">
+                        <div>
+                          <p className="text-slate-300 text-sm font-semibold mb-1">Today's Status</p>
+                          <h2 className="text-3xl font-bold font-mono">{formatClock(clock)}</h2>
+                          <div className="text-xs text-slate-300 mt-1">{todayKeyStr}</div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <div className={`px-3 py-1 rounded-full text-xs font-extrabold ${statusBadge.cls}`}>
+                            {statusBadge.text}
+                          </div>
+
+                          {locationStatus.coords && outOfOfficeUI && wfaActiveUI && (
+                            <div className="px-2.5 py-1 rounded-full text-xs font-extrabold bg-amber-400 text-amber-950">WFA</div>
+                          )}
+                        </div>
+                      </div>
+
+                      {(status.checkedIn || status.attendanceStatus) && (
+                        <div className="mt-4 pt-4 border-t border-white/10 text-xs text-slate-200 space-y-1">
+                          {status.checkedIn && <div>In: <span className="text-white font-mono">{status.checkInTime}</span></div>}
+                          {status.checkedOut && <div>Out: <span className="text-white font-mono">{status.checkOutTime}</span></div>}
+                          {status.attendanceRemark && <div>Remark: <span className="text-white">{status.attendanceRemark}</span></div>}
+                        </div>
+                      )}
+                    </Card>
+
+                    {todayActiveLeave && (
+                      <div className="rounded-xl border p-3 shadow-sm bg-violet-50 border-violet-200 text-violet-900">
                         <div className="font-extrabold text-sm">
-                          {wfaActiveUI ? "WFA detected (outside office area)" : "Outside office area"}
+                          {todayActiveLeave.leave_type_name} · {formatDurationTypeLabel(todayActiveLeave.duration_type)}
                         </div>
-                        <div className="text-xs opacity-80 mt-0.5">
-                          Distance: <span className="font-mono">{locationStatus.distance}m</span>
-                          {" · "}
-                          Nearest: <span className="font-semibold">{locationStatus.matchedLocation?.name || "Unknown"}</span>
-                          {" · "}
-                          Radius: <span className="font-mono">{limitUI}m</span>
-                        </div>
-                        <div className="text-xs mt-1 font-semibold">
-                          {wfaActiveUI ? "You can check-in during WFA window." : "Check-in is blocked (WFA not active)."}
+                        <div className="text-xs opacity-80 mt-1">
+                          {todayActiveLeave.reason || (isFullDayLeaveToday ? "You cannot check-in today." : isAmLeaveToday ? "AM leave allows check-in later. After 13:00 it will count as late." : "Partial leave is active for today.")}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ===== Monthly ===== */}
-                <Card className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-slate-800 flex items-center">
-                      <Icons.BarChart size={18} className="mr-2 text-indigo-600" />
-                      Monthly Attendance
-                    </h3>
-                    <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">This Month</span>
-                  </div>
-
-                  <ProgressBar label="Late Occurrences" current={monthlyStats.lateCount} max={config.maxLateCount} />
-                  <ProgressBar label="Late Minutes" current={monthlyStats.lateMinutes} max={config.maxLateMinutes} />
-
-                  <div className="text-xs text-slate-400 mt-2 text-center">
-                    Limits: {config.maxLateCount} times / {config.maxLateMinutes} minutes per month
-                  </div>
-                </Card>
-
-                {/* ===== Location Card ===== */}
-                <Card className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="font-bold text-slate-800 flex items-center">
-                      <Icons.MapPin size={18} className="mr-2 text-blue-600" />
-                      Location Check
-                    </h3>
-                    {locationStatus.matchedLocation && (
-                      <span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2 py-1 rounded">
-                        {locationStatus.matchedLocation.name}
-                      </span>
                     )}
-                  </div>
 
-                  {!locationStatus.coords ? (
-                    <div className="text-center py-6 bg-slate-50 rounded-lg border border-dashed border-slate-300">
-                      <Button onClick={getLocation} disabled={locationStatus.loading} variant="ghost">
-                        <span className="inline-flex items-center gap-2">
-                          <Icons.Navigation size={16} />
-                          {locationStatus.loading ? "Locating..." : "Verify Location"}
-                        </span>
-                      </Button>
-                      <p className="text-xs text-slate-400 mt-3">GPS permission required.</p>
-                      {locationStatus.error && (
-                        <p className="mt-3 text-red-600 text-sm flex items-center justify-center gap-2">
-                          <Icons.AlertTriangle size={14} /> {locationStatus.error}
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg">
-                        <span className="text-sm text-slate-500">Distance</span>
-                        <span className={`font-extrabold text-lg ${
-                          locationStatus.distance > (locationStatus.matchedLocation?.radius || 10) ? "text-red-600" : "text-green-600"
-                        }`}>
-                          {locationStatus.distance}m
-                        </span>
+                    {locationStatus.coords && outOfOfficeUI && (
+                      <div className={`rounded-xl border p-3 shadow-sm ${wfaActiveUI ? "bg-amber-50 border-amber-200 text-amber-900" : "bg-red-50 border-red-200 text-red-900"}`}>
+                        <div className="flex items-start gap-3">
+                          <div className={`mt-0.5 h-2.5 w-2.5 rounded-full ${wfaActiveUI ? "bg-amber-500" : "bg-red-500"}`} />
+                          <div className="flex-1">
+                            <div className="font-extrabold text-sm">
+                              {wfaActiveUI ? "WFA detected (outside office area)" : "Outside office area"}
+                            </div>
+                            <div className="text-xs opacity-80 mt-0.5">
+                              Distance: <span className="font-mono">{locationStatus.distance}m</span>
+                              {" · "}
+                              Nearest: <span className="font-semibold">{locationStatus.matchedLocation?.name || "Unknown"}</span>
+                              {" · "}
+                              Radius: <span className="font-mono">{limitUI}m</span>
+                            </div>
+                            <div className="text-xs mt-1 font-semibold">
+                              {wfaActiveUI ? "You can check-in during WFA window." : "Check-in is blocked (WFA not active)."}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <Card className="p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-bold text-slate-800 flex items-center">
+                          <Icons.BarChart size={18} className="mr-2 text-indigo-600" />
+                          Monthly Attendance
+                        </h3>
+                        <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">This Month</span>
                       </div>
 
-                      {locationStatus.distance > (locationStatus.matchedLocation?.radius || 10) ? (
-                        <div className={`text-xs p-2 rounded flex items-center gap-2 ${
-                          wfaActiveUI ? "text-amber-800 bg-amber-50" : "text-red-700 bg-red-50"
-                        }`}>
-                          <Icons.AlertTriangle size={14} />
-                          {wfaActiveUI
-                            ? "Outside radius, but WFA active (you can check-in)."
-                            : `Too far from ${locationStatus.matchedLocation?.name}. (WFA not active)`}
+                      <ProgressBar label="Late Occurrences" current={monthlyStats.lateCount} max={config.maxLateCount} />
+                      <ProgressBar label="Late Minutes" current={monthlyStats.lateMinutes} max={config.maxLateMinutes} />
+
+                      <div className="text-xs text-slate-400 mt-2 text-center">
+                        Limits: {config.maxLateCount} times / {config.maxLateMinutes} minutes per month
+                      </div>
+                    </Card>
+
+                    <Card className="p-5">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-bold text-slate-800 flex items-center">
+                          <Icons.MapPin size={18} className="mr-2 text-blue-600" />
+                          Location Check
+                        </h3>
+                        {locationStatus.matchedLocation && (
+                          <span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2 py-1 rounded">
+                            {locationStatus.matchedLocation.name}
+                          </span>
+                        )}
+                      </div>
+
+                      {!locationStatus.coords ? (
+                        <div className="text-center py-6 bg-slate-50 rounded-lg border border-dashed border-slate-300">
+                          <Button onClick={getLocation} disabled={locationStatus.loading} variant="ghost">
+                            <span className="inline-flex items-center gap-2">
+                              <Icons.Navigation size={16} />
+                              {locationStatus.loading ? "Locating..." : "Verify Location"}
+                            </span>
+                          </Button>
+                          <p className="text-xs text-slate-400 mt-3">GPS permission required.</p>
+                          {locationStatus.error && (
+                            <p className="mt-3 text-red-600 text-sm flex items-center justify-center gap-2">
+                              <Icons.AlertTriangle size={14} /> {locationStatus.error}
+                            </p>
+                          )}
                         </div>
                       ) : (
-                        <div className="text-xs text-green-700 bg-green-50 p-2 rounded flex items-center gap-2">
-                          <Icons.CheckCircle size={14} /> Verified: {locationStatus.matchedLocation?.name}
+                        <div className="space-y-3">
+                          <div className="flex justify-between items-center bg-slate-50 p-3 rounded-lg">
+                            <span className="text-sm text-slate-500">Distance</span>
+                            <span className={`font-extrabold text-lg ${locationStatus.distance > (locationStatus.matchedLocation?.radius || 10) ? "text-red-600" : "text-green-600"}`}>
+                              {locationStatus.distance}m
+                            </span>
+                          </div>
+
+                          {locationStatus.distance > (locationStatus.matchedLocation?.radius || 10) ? (
+                            <div className={`text-xs p-2 rounded flex items-center gap-2 ${wfaActiveUI ? "text-amber-800 bg-amber-50" : "text-red-700 bg-red-50"}`}>
+                              <Icons.AlertTriangle size={14} />
+                              {wfaActiveUI ? "Outside radius, but WFA active (you can check-in)." : `Too far from ${locationStatus.matchedLocation?.name}. (WFA not active)`}
+                            </div>
+                          ) : (
+                            <div className="text-xs text-green-700 bg-green-50 p-2 rounded flex items-center gap-2">
+                              <Icons.CheckCircle size={14} /> Verified: {locationStatus.matchedLocation?.name}
+                            </div>
+                          )}
+
+                          <button onClick={getLocation} className="text-xs text-blue-600 hover:underline w-full text-center">Refresh GPS</button>
                         </div>
                       )}
+                    </Card>
 
-                      <button onClick={getLocation} className="text-xs text-blue-600 hover:underline w-full text-center">
-                        Refresh GPS
-                      </button>
-                    </div>
-                  )}
-                </Card>
+                    <Card className="p-5">
+                      {!status.checkedIn ? (
+                        <>
+                          {requireLateReason && (
+                            <div className="mb-4">
+                              <label className="block text-sm font-semibold text-orange-700 mb-1">
+                                Late Reason <span className="text-red-500">*</span>
+                              </label>
+                              <textarea
+                                className="w-full px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-700 text-sm"
+                                rows="2"
+                                placeholder="Why are you late?"
+                                value={lateReason}
+                                onChange={e => setLateReason(e.target.value)}
+                              />
+                            </div>
+                          )}
 
-                {/* ===== Check In/Out ===== */}
-                <Card className="p-5">
-                  {!status.checkedIn ? (
-                    <>
-                      {isLateNow && (
-                        <div className="mb-4">
-                          <label className="block text-sm font-semibold text-orange-700 mb-1">
-                            Late Reason <span className="text-red-500">*</span>
-                          </label>
-                          <textarea
-                            className="w-full px-3 py-2 bg-orange-50 border border-orange-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-slate-700 text-sm"
-                            rows="2"
-                            placeholder="Why are you late?"
-                            value={lateReason}
-                            onChange={e => setLateReason(e.target.value)}
-                          />
+                          <Button
+                            onClick={() => handleAction("IN")}
+                            disabled={loading || !locationStatus.coords || isFullDayLeaveToday || status.attendanceStatus === "ABSENT"}
+                            variant="primary"
+                          >
+                            {loading ? "Saving..." : isFullDayLeaveToday ? "ON FULL-DAY LEAVE" : status.attendanceStatus === "ABSENT" ? "ABSENT FINALIZED" : "SUBMIT CHECK-IN"}
+                          </Button>
+                        </>
+                      ) : !status.checkedOut ? (
+                        <div className="space-y-4">
+                          <div className="bg-blue-50 text-blue-800 p-4 rounded-lg text-sm text-center">
+                            You checked in at <strong>{status.checkInTime}</strong>.
+                            <br />Ready to leave?
+                          </div>
+                          <Button onClick={() => handleAction("OUT")} disabled={loading || !locationStatus.coords} variant="danger">
+                            {loading ? "Saving..." : "CHECK OUT"}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="text-center py-4">
+                          <div className="inline-block p-3 bg-green-100 text-green-600 rounded-full mb-3">
+                            <Icons.CheckCircle size={32} />
+                          </div>
+                          <h3 className="text-lg font-extrabold text-slate-800">Shift Complete</h3>
+                          <p className="text-slate-500 text-sm">Have a great evening!</p>
                         </div>
                       )}
+                    </Card>
 
-                      <Button onClick={() => handleAction("IN")} disabled={loading || !locationStatus.coords} variant="primary">
-                        {loading ? "Saving..." : "SUBMIT CHECK-IN"}
-                      </Button>
-                    </>
-                  ) : !status.checkedOut ? (
-                    <div className="space-y-4">
-                      <div className="bg-blue-50 text-blue-800 p-4 rounded-lg text-sm text-center">
-                        You checked in at <strong>{status.checkInTime}</strong>.
-                        <br />Ready to leave?
+                    <Card className="p-5">
+                      <div className="text-sm font-bold text-slate-800 mb-2">Debug</div>
+                      <div className="text-xs text-slate-500 space-y-1">
+                        <div>API: <span className="font-mono break-all">{API_URL}</span></div>
+                        <div>WFA: {WFA_ENABLED ? "ON" : "OFF"} ({WFA_START} → {WFA_END})</div>
+                        <div>Today Row: {todayRow ? "FOUND" : "NOT FOUND"}</div>
+                        <div>Logs Loaded: {logs.length}</div>
+                        <div>Leave Today: {todayActiveLeave ? `${todayActiveLeave.leave_type_code} / ${todayActiveLeave.duration_type}` : "NO"}</div>
                       </div>
-                      <Button onClick={() => handleAction("OUT")} disabled={loading || !locationStatus.coords} variant="danger">
-                        {loading ? "Saving..." : "CHECK OUT"}
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="text-center py-4">
-                      <div className="inline-block p-3 bg-green-100 text-green-600 rounded-full mb-3">
-                        <Icons.CheckCircle size={32} />
+                      <div className="mt-3 space-y-2">
+                        <Button variant="ghost" onClick={() => withBackgroundLoading("Refreshing logs...", () => refreshLogs(currentUser.id)).then(()=>notify("Logs refreshed")).catch(e=>notify(e.message,"err"))} disabled={loading}>
+                          Refresh Logs from Sheet
+                        </Button>
+                        <Button variant="ghost" onClick={() => withBackgroundLoading("Refreshing leaves...", () => refreshLeaves(currentUser.id)).then(()=>notify("Leaves refreshed")).catch(e=>notify(e.message,"err"))} disabled={loading}>
+                          Refresh Leaves
+                        </Button>
                       </div>
-                      <h3 className="text-lg font-extrabold text-slate-800">Shift Complete</h3>
-                      <p className="text-slate-500 text-sm">Have a great evening!</p>
-                    </div>
-                  )}
-                </Card>
+                    </Card>
+                  </>
+                )}
 
-                {/* ===== Debug ===== */}
-                <Card className="p-5">
-                  <div className="text-sm font-bold text-slate-800 mb-2">Debug</div>
-                  <div className="text-xs text-slate-500 space-y-1">
-                    <div>API: <span className="font-mono break-all">{API_URL}</span></div>
-                    <div>WFA: {WFA_ENABLED ? "ON" : "OFF"} ({WFA_START} → {WFA_END})</div>
-                    <div>Today Row: {todayRow ? "FOUND" : "NOT FOUND"}</div>
-                    <div>Logs Loaded: {logs.length}</div>
-                  </div>
-                  <div className="mt-3">
-                    <Button
-                      variant="ghost"
-                      onClick={() => refreshLogs(currentUser.id).then(()=>notify("Logs refreshed")).catch(e=>notify(e.message,"err"))}
-                      disabled={loading}
-                    >
-                      Refresh Logs from Sheet
-                    </Button>
-                  </div>
-                </Card>
+                                {activeTab === "leave" && (
+                  <>
+                    <Card className="p-5">
+                      <h3 className="font-bold text-slate-800 mb-4 flex items-center"><Icons.CalendarDays size={18} className="mr-2 text-blue-600" /> Create Leave Request</h3>
 
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Leave Type</label>
+                        <select
+                          value={leaveForm.leave_type_code}
+                          onChange={e => setLeaveForm({ ...leaveForm, leave_type_code: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          {leaveTypes.map(item => (
+                            <option key={item.leave_type_code} value={item.leave_type_code}>{item.leave_type_name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Duration Type</label>
+                        <select
+                          value={leaveForm.duration_type}
+                          onChange={e => setLeaveForm({ ...leaveForm, duration_type: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          {allowedDurationOptions.map(opt => (
+                            <option key={opt} value={opt}>{formatDurationTypeLabel(opt)}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <Input
+                          label="Start Date"
+                          type="date"
+                          min={dateKey(new Date())}
+                          value={leaveForm.start_date}
+                          onChange={e => setLeaveForm({ ...leaveForm, start_date: e.target.value })}
+                        />
+                        <Input
+                          label="End Date"
+                          type="date"
+                          min={leaveForm.start_date || dateKey(new Date())}
+                          value={leaveForm.end_date}
+                          onChange={e => setLeaveForm({ ...leaveForm, end_date: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Total Days</label>
+                        <input
+                          type="text"
+                          readOnly
+                          value={leavePreviewDays}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-700"
+                        />
+                        <div className="text-[11px] text-slate-500 mt-1">Preview excludes weekends. Final calculation on server also excludes holidays.</div>
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Reason</label>
+                        <textarea
+                          value={leaveForm.reason}
+                          onChange={e => setLeaveForm({ ...leaveForm, reason: e.target.value })}
+                          rows="3"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Please enter your reason"
+                        />
+                      </div>
+
+                      <Input
+                        label="Attachment URL (optional)"
+                        value={leaveForm.attachment_url}
+                        onChange={e => setLeaveForm({ ...leaveForm, attachment_url: e.target.value })}
+                        placeholder="https://..."
+                      />
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Handover Note</label>
+                        <textarea
+                          value={leaveForm.handover_note}
+                          onChange={e => setLeaveForm({ ...leaveForm, handover_note: e.target.value })}
+                          rows="4"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="ภาระงานที่มอบหมายให้เพื่อนร่วมงาน / งานเร่งด่วนที่ต้องดูแลแทน"
+                        />
+                      </div>
+
+                      <Button onClick={handleSubmitLeave} disabled={loading || !leaveTypes.length}>{loading ? "Saving..." : "Submit Leave"}</Button>
+                    </Card>
+
+                    <Card className="p-5">
+                      <div className="flex items-center justify-between gap-3 mb-4">
+                        <h3 className="font-bold text-slate-800">My Leave Records</h3>
+                        <button
+                          onClick={() => withBackgroundLoading("Refreshing leave records...", () => refreshLeaves(currentUser.id)).then(()=>notify("Leave records refreshed")).catch(e=>notify(e.message,"err"))}
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          Refresh
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        {myLeaves.length === 0 ? (
+                          <div className="text-sm text-slate-500">No leave records</div>
+                        ) : myLeaves.map(item => {
+                          const active = String(item.record_status || "").toUpperCase() === "ACTIVE";
+                          return (
+                            <div key={item.leave_id} className="border border-slate-200 rounded-xl p-4 bg-white shadow-sm">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="font-semibold text-slate-800">{item.leave_type_name}</div>
+                                  <div className="text-sm text-slate-600 mt-1">
+                                    {formatDurationTypeLabel(item.duration_type)} · {item.start_date}{item.end_date && item.end_date !== item.start_date ? ` → ${item.end_date}` : ""}
+                                  </div>
+                                  <div className="text-xs text-slate-500 mt-1">Days: {item.total_days}</div>
+                                </div>
+
+                                <div className="flex flex-col items-end gap-1 shrink-0">
+                                  <span className={`text-[11px] px-2 py-1 rounded-full font-semibold ${active ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+                                    {item.record_status}
+                                  </span>
+                                  <span className="text-[11px] px-2 py-1 rounded-full font-semibold bg-blue-50 text-blue-700">
+                                    {item.form_status}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="text-xs text-slate-600 mt-3"><span className="font-semibold">Reason:</span> {item.reason || "-"}</div>
+                              <div className="text-xs text-slate-600 mt-1"><span className="font-semibold">Handover:</span> {item.handover_note || "-"}</div>
+                              <div className="text-xs text-slate-500 mt-1">Requested: {item.request_date || "-"}</div>
+                              {item.form_generated_at && <div className="text-xs text-slate-500 mt-1">Generated: {item.form_generated_at}</div>}
+                              {item.sent_at && <div className="text-xs text-slate-500 mt-1">Sent: {item.sent_at}</div>}
+                              {item.form_file_url && (
+                                <div className="mt-2">
+                                  <a href={item.form_file_url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline">Open generated form</a>
+                                </div>
+                              )}
+
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                <button
+                                  onClick={() => handleGenerateLeaveForm(item.leave_id)}
+                                  disabled={!active || loading}
+                                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-blue-600 text-white disabled:opacity-50"
+                                >
+                                  Generate Form
+                                </button>
+                                <button
+                                  onClick={() => handleSendLeaveToEmail(item.leave_id)}
+                                  disabled={!active || loading}
+                                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white disabled:opacity-50"
+                                >
+                                  Send to Email
+                                </button>
+                                <button
+                                  onClick={() => handleCancelLeave(item.leave_id)}
+                                  disabled={!active || loading}
+                                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-red-50 text-red-700 border border-red-200 disabled:opacity-50"
+                                >
+                                  Cancel Leave
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </Card>
+                  </>
+                )}
+
+                {activeTab === "rooms" && (
+                  <>
+                    <Card className="p-5">
+                      <h3 className="font-bold text-slate-800 mb-4 flex items-center"><Icons.DoorOpen size={18} className="mr-2 text-blue-600" /> Check Room Availability</h3>
+
+                      <Input
+                        label="Date"
+                        type="date"
+                        min={dateKey(new Date())}
+                        value={roomDate}
+                        onChange={e => {
+                          setRoomDate(e.target.value);
+                          setRoomForm({ ...roomForm, book_date: e.target.value });
+                        }}
+                      />
+
+                      <div className="space-y-4">
+                        {ROOMS.map(room => {
+                          const items = roomBookings
+                            .filter(x => x.room_name === room)
+                            .map(x => ({ ...x, start_time: normalizeHHMM(x.start_time), end_time: normalizeHHMM(x.end_time) }))
+                            .sort((a,b) => (timeToMinutes(a.start_time) || 0) - (timeToMinutes(b.start_time) || 0));
+
+                          const totalBooked = items.reduce((sum, item) => {
+                            const start = timeToMinutes(item.start_time);
+                            const end = timeToMinutes(item.end_time);
+                            return sum + ((start != null && end != null && end > start) ? (end - start) : 0);
+                          }, 0);
+
+                          return (
+                            <div key={room} className="border border-slate-200 rounded-xl p-4 bg-gradient-to-br from-white to-slate-50">
+                              <div className="flex items-start justify-between gap-3 mb-2">
+                                <div>
+                                  <div className="font-semibold text-slate-800">{room}</div>
+                                  <div className="text-xs text-slate-500 mt-1">
+                                    {items.length === 0
+                                      ? "Free all day"
+                                      : `${items.length} booking${items.length > 1 ? "s" : ""} · ${formatMinutesAsDuration(totalBooked)} reserved`}
+                                  </div>
+                                </div>
+
+                                <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${items.length === 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+                                  {items.length === 0 ? "Available" : "Partly booked"}
+                                </span>
+                              </div>
+
+                              {items.length === 0 ? (
+                                <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-4 text-sm text-emerald-700 font-medium">
+                                  Available all day
+                                </div>
+                              ) : (
+                                <>
+                                  <RoomTimeline items={items} />
+
+                                  <div className="space-y-2 mt-4">
+                                    {items.map(b => (
+                                      <div key={b.booking_id} className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+                                        <div className="flex items-start justify-between gap-3">
+                                          <div className="min-w-0">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                              <span className="text-sm font-bold text-slate-800">{formatTimeLabel(b.start_time)} - {formatTimeLabel(b.end_time)}</span>
+                                              <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold">Booked</span>
+                                            </div>
+                                            <div className="text-xs text-slate-700 mt-2"><span className="font-semibold">Purpose:</span> {b.purpose}</div>
+                                            <div className="text-xs text-slate-500 mt-1"><span className="font-semibold">Note:</span> {b.note || "-"}</div>
+                                            <div className="text-xs text-slate-500 mt-1">by {b.requester_name}</div>
+                                          </div>
+
+                                          {b.requester_email === currentUser.email && (
+                                            <button
+                                              onClick={() => handleCancelRoom(b.booking_id)}
+                                              className="text-red-600 hover:text-red-700 shrink-0"
+                                              title="Cancel booking"
+                                            >
+                                              <Icons.XCircle size={18} />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </Card>
+
+                    <Card className="p-5">
+                      <h3 className="font-bold text-slate-800 mb-2">Book Meeting Room</h3>
+                      <div className="text-xs text-slate-500 mb-4">Choose room, time, and purpose. The system will block overlapping bookings automatically.</div>
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Room</label>
+                        <select
+                          value={roomForm.room_name}
+                          onChange={e => setRoomForm({ ...roomForm, room_name: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          {ROOMS.map(room => <option key={room} value={room}>{room}</option>)}
+                        </select>
+                      </div>
+
+                      <Input
+                        label="Date"
+                        type="date"
+                        min={dateKey(new Date())}
+                        value={roomForm.book_date}
+                        onChange={e => setRoomForm({ ...roomForm, book_date: e.target.value })}
+                      />
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <Input
+                          label="Start Time"
+                          type="time"
+                          value={roomForm.start_time}
+                          onChange={e => setRoomForm({ ...roomForm, start_time: e.target.value })}
+                        />
+                        <Input
+                          label="End Time"
+                          type="time"
+                          value={roomForm.end_time}
+                          onChange={e => setRoomForm({ ...roomForm, end_time: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Purpose of Use <span className="text-red-500">*</span></label>
+                        <input
+                          value={roomForm.purpose}
+                          onChange={e => setRoomForm({ ...roomForm, purpose: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="e.g. Staff meeting / Interview / Student consultation"
+                        />
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">Additional Note</label>
+                        <textarea
+                          value={roomForm.note}
+                          onChange={e => setRoomForm({ ...roomForm, note: e.target.value })}
+                          rows="3"
+                          className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Optional"
+                        />
+                      </div>
+
+                      <Button onClick={handleBookRoom} disabled={loading}>{loading ? "Saving..." : "Book Room"}</Button>
+                    </Card>
+                  </>
+                )}
               </main>
             </>
           )}
