@@ -24,17 +24,60 @@
     const { useEffect, useMemo, useState } = React;
 
     // ====== EDIT THESE 2 VALUES ======
-    const API_URL = "https://script.google.com/macros/s/AKfycbw7aHbymHTaSKv-KFdqox_pn3rbcPZrXDMgrI5Fj_Ie-MCxz7r9ihtU7nLP96yKaBPuKQ/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycby9B91VKOZ1d6XizsrFHOmfvrJT7TkEm-JpkImgt-9GpxTTh4vcnoxMbTqfH3qbLsB0/exec";
     const SECRET = "CHANGE_ME_ROOM_DASHBOARD_SECRET";
     // =================================
 
     const EMAIL_OPTIONS = [
-      "thanaphon.a@chula.ac.th","nattanan.s@chula.ac.th","jirachaya.so@chula.ac.th","punsita.b@chula.ac.th",
-      "waranya.ph@chula.ac.th","pamigar.m@chula.ac.th","napassorn.p@chula.ac.th","thosaphol.t@chula.ac.th",
-      "sawarach.s@chula.ac.th","fonthong.t@chula.ac.th","thanatpong.t@chula.ac.th","supaphan.p@chula.ac.th",
-      "phachphicha.p@chula.ac.th","jirasaya.c@chula.ac.th","sittipun.w@chula.ac.th","panyata.s@chula.ac.th",
-      "puncharas.s@chula.ac.th","sasiwipa.p@chula.ac.th","dolaporn.a@chula.ac.th","nat.s@chula.ac.th",
-      "supatcharin.n@chula.ac.th","nichayanuch.l@chula.ac.th","suputtra.d@chula.ac.th"
+        "thanaphon.a@chula.ac.th",
+  "nattanan.s@chula.ac.th",
+  "jirachaya.so@chula.ac.th",
+  "punsita.b@chula.ac.th",
+  "waranya.ph@chula.ac.th",
+  "pamigar.m@chula.ac.th",
+  "napassorn.p@chula.ac.th",
+  "thosaphol.t@chula.ac.th",
+  "sawarach.s@chula.ac.th",
+  "fonthong.t@chula.ac.th",
+  "thanatpong.t@chula.ac.th",
+  "supaphan.p@chula.ac.th",
+  "phachphicha.p@chula.ac.th",
+  "jirasaya.c@chula.ac.th",
+  "sittipun.w@chula.ac.th",
+  "panyata.s@chula.ac.th",
+  "puncharas.s@chula.ac.th",
+  "sasiwipa.p@chula.ac.th",
+  "dolaporn.a@chula.ac.th",
+  "nat.s@chula.ac.th",
+  "supatcharin.n@chula.ac.th",
+  "nichayanuch.l@chula.ac.th",
+  "suputtra.d@chula.ac.th",
+  "weetima.w@chula.ac.th",
+  "artiwan.sh@chula.ac.th",
+  "tawan.p@chula.ac.th",
+  "pimporn.p@chula.ac.th", 
+  "chotirat.R@chula.ac.th",
+  "chonlatep.U@chula.ac.th",
+  "pramote.d@chula.ac.th",
+  "charusluk.v@chula.ac.th",
+  "pinunta.r@chula.ac.th",
+  "porpin.p@chula.ac.th",
+  "apipon.m@chula.ac.th",
+  "joshua.s@chula.ac.th",
+  "sirin.n@chula.ac.th",
+  "yan.z@chula.ac.th",
+  "prabhath.d@chula.ac.th",
+  "chee.k@chula.ac.th",
+  "ronnapee.c@chula.ac.th",
+  "aung.p@chula.ac.th",
+  "viboon.s@chula.ac.th",
+  "borrdephong.p@chula.ac.th",
+  "paulo.g@chula.ac.th",
+  "sindhu.a@chula.ac.th",
+  "sandrasegaran.k@chula.ac.th",
+  "hossein.m@chula.ac.th",
+  "soracha.d@chula.ac.th",
+  "daricha.s@chula.ac.th"
     ];
 
     const ROOMS = [
