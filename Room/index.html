@@ -163,9 +163,9 @@
     const setStoredRequesterEmail = (email) => localStorage.setItem("room_dash_requester_email", email);
 
     const TIMELINE_START = 8 * 60;
-    const TIMELINE_END = 20 * 60;
+    const TIMELINE_END = 17 * 60;
     const TIMELINE_RANGE = TIMELINE_END - TIMELINE_START;
-    const HOUR_MARKS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+    const HOUR_MARKS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17];
 
     const makePlaceholderSvg = (roomName, accent = "from-slate-600 to-slate-400") => {
       const label = encodeURIComponent(roomName);
