@@ -547,12 +547,29 @@ function RoomBookingDashboard() {
   };
 
   const handleLogin = async () => {
-    const email = normalizeEmail(authForm.email);
-    const password = String(authForm.password || "");
-    if (!email || !password) {
-      notify("Please enter email and password.", "err");
+  const email = normalizeEmail(authForm.email);
+  const password = String(authForm.password || "");
+  if (!email || !password) {
+    notify("Please enter email and password.", "err");
+    return;
+  }
+
+  await runBusy("Signing in...", async () => {
+    const result = await apiPost({ action: "roomLogin", email, password });
+    console.log("roomLogin result =>", result);
+
+    if (!result.ok) {
+      notify(result.error || "Login failed", "err");
       return;
     }
+
+    setStoredSessionToken(result.session_token);
+    setCurrentUser(result.user);
+    setRooms(result.rooms || ROOMS);
+    setAuthForm(prev => ({ ...prev, email, password: "" }));
+    notify(`Welcome back, ${result.user?.name || email}`);
+  });
+};
 
     await runBusy("Signing in...", async () => {
       const result = await apiPost({ action: "roomLogin", email, password });
