@@ -24,7 +24,7 @@
     const { useEffect, useMemo, useState } = React;
 
     // ====== EDIT THESE 2 VALUES ======
-    const API_URL = "https://script.google.com/macros/s/AKfycbzgPoUuiOlvu__xPZfkhjsnmpl6JzLsXamjF1nlx_0X8zBwV8e6_EQzopxZNXULSIwY6g/exec";
+    const API_URL = "https://script.google.com/macros/s/AKfycbzE3Vc_eXHRBQsQHsy0OvkvtoXeKOu_BbwArApURyWk1YYEEjcNbzMSjKUJuAG4zRM3gg/exec"
     // =================================
 
 
@@ -142,6 +142,7 @@
     // };
 
     const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
     const TIMELINE_START = 8 * 60;
     const TIMELINE_END = 20 * 60;
@@ -313,37 +314,45 @@ function RoomBookingDashboard() {
     bootstrapSession();
   }, []);
 
-  const loadBookings = async (date) => {
-    const result = await apiPost({ action:"fetchRoomBookings", book_date: date });
-    if (!result.ok) {
-      if (result.error_code === "AUTH_REQUIRED") {
-        clearStoredSessionToken();
-        setCurrentUser(null);
-        return false;
-      }
-      notify(result.error || "Unable to load bookings", "err");
+const loadBookings = async (date, retry = true) => {
+  const result = await apiPost({ action:"fetchRoomBookings", book_date: date });
+  if (!result.ok) {
+    if (result.error_code === "AUTH_REQUIRED" && retry) {
+      await sleep(600);
+      return loadBookings(date, false);
+    }
+    if (result.error_code === "AUTH_REQUIRED") {
+      clearStoredSessionToken();
+      setCurrentUser(null);
       return false;
     }
-    setRooms(result.rooms || ROOMS);
-    setBookings(result.bookings || []);
-    return true;
-  };
+    notify(result.error || "Unable to load bookings", "err");
+    return false;
+  }
+  setRooms(result.rooms || ROOMS);
+  setBookings(result.bookings || []);
+  return true;
+};
 
-  const loadRangeBookings = async (startDate, endDate, setter, errorMessage = "Unable to load range data") => {
-    const result = await apiPost({ action:"fetchRoomBookingsRange", start_date: startDate, end_date: endDate });
-    if (!result.ok) {
-      if (result.error_code === "AUTH_REQUIRED") {
-        clearStoredSessionToken();
-        setCurrentUser(null);
-        return false;
-      }
-      notify(result.error || errorMessage, "err");
+const loadRangeBookings = async (startDate, endDate, setter, errorMessage = "Unable to load range data", retry = true) => {
+  const result = await apiPost({ action:"fetchRoomBookingsRange", start_date: startDate, end_date: endDate });
+  if (!result.ok) {
+    if (result.error_code === "AUTH_REQUIRED" && retry) {
+      await sleep(600);
+      return loadRangeBookings(startDate, endDate, setter, errorMessage, false);
+    }
+    if (result.error_code === "AUTH_REQUIRED") {
+      clearStoredSessionToken();
+      setCurrentUser(null);
       return false;
     }
-    setRooms(result.rooms || ROOMS);
-    setter(result.bookings || []);
-    return true;
-  };
+    notify(result.error || errorMessage, "err");
+    return false;
+  }
+  setRooms(result.rooms || ROOMS);
+  setter(result.bookings || []);
+  return true;
+};
 
   useEffect(() => {
     if (!currentUser) return;
@@ -546,28 +555,31 @@ function RoomBookingDashboard() {
     });
   };
 
-  const handleLogin = async () => {
-    const email = normalizeEmail(authForm.email);
-    const password = String(authForm.password || "");
-    if (!email || !password) {
-      notify("Please enter email and password.", "err");
+const handleLogin = async () => {
+  const email = normalizeEmail(authForm.email);
+  const password = String(authForm.password || "");
+  if (!email || !password) {
+    notify("Please enter email and password.", "err");
+    return;
+  }
+
+  await runBusy("Signing in...", async () => {
+    const result = await apiPost({ action: "roomLogin", email, password });
+    if (!result.ok) {
+      notify(result.error || "Login failed", "err");
       return;
     }
 
-    await runBusy("Signing in...", async () => {
-      const result = await apiPost({ action: "roomLogin", email, password });
-      if (!result.ok) {
-        notify(result.error || "Login failed", "err");
-        return;
-      }
-      setStoredSessionToken(result.session_token);
-      setCurrentUser(result.user || { email, name: email });
-      setRooms(result.rooms || ROOMS);
-      setAuthForm(prev => ({ ...prev, email, password: "" }));
-      setAuthMode("login");
-      notify(`Welcome back, ${result.user?.name || email}`);
-    });
-  };
+    setStoredSessionToken(result.session_token);
+    setRooms(result.rooms || ROOMS);
+    setAuthForm(prev => ({ ...prev, email, password: "" }));
+    setAuthMode("login");
+    notify(`Welcome back, ${result.user?.name || email}`);
+
+    await sleep(350);
+    setCurrentUser(result.user || { email, name: email });
+  });
+};
 
   const handleLogout = async () => {
     await runBusy("Signing out...", async () => {
