@@ -24,7 +24,7 @@
     const { useEffect, useMemo, useState } = React;
 
     // ====== EDIT THESE 2 VALUES ======
-    const API_URL = "https://script.google.com/macros/s/AKfycby9eCbrYY3pTnsJ4SV8gsgKxbu325gt3Gc0c3pebSP1xavyMhdtoCyfUQHIM9JHsWXtnA/exec"
+    const API_URL = "https://script.google.com/macros/s/AKfycbyldqT-AiS1AI2uKAKVx8S0zh50HotFny-72aKP3A5NsmePE1I8jPkDOEUqOlbJVmsapQ/exec"
     // =================================
 
 
@@ -561,9 +561,10 @@ function RoomBookingDashboard() {
         return;
       }
       setStoredSessionToken(result.session_token);
-      setCurrentUser(result.user);
+      setCurrentUser(result.user || { email, name: email });
       setRooms(result.rooms || ROOMS);
       setAuthForm(prev => ({ ...prev, email, password: "" }));
+      setAuthMode("login");
       notify(`Welcome back, ${result.user?.name || email}`);
     });
   };
