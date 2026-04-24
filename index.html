@@ -28,8 +28,7 @@
     const WFA_END   = "2026-03-31"; // yyyy-MM-dd
 
     // ===================== EDIT HERE =====================
-    const API_URL = "https://script.google.com/macros/s/AKfycbyK369VZ-EonH8a4ZWanyNGEpql4_9713e7mFwDOtP66jwKBXdYF5AxRUdLI_2_jh02/exec";
-    const SECRET  = "ISE_TOKEN";
+    const API_URL = "https://script.google.com/macros/s/AKfycbw9nuvzaB_O3xHQq1HEmg7ZukBgbqgSG2bN8lv8AXM7_Yc63sZXiwaNXjnK4UIQSrCKRw/exec";
     // =====================================================
 
     const ROOMS = [
@@ -212,7 +211,8 @@
     async function apiPost(payload) {
       const res = await fetch(API_URL, {
         method: "POST",
-        body: JSON.stringify({ ...payload, secret: SECRET }),
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload),
         redirect: "follow",
       });
       const text = await res.text();
