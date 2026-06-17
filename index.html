@@ -6,11 +6,11 @@
   <title>ISECheckIN - Employee Attendance</title>
 
   <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
-  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.10/babel.min.js"></script>
 
   <style>
     html { -webkit-tap-highlight-color: transparent; }
@@ -20,7 +20,37 @@
 </head>
 
 <body class="bg-slate-100 text-slate-800">
-  <div id="root"></div>
+  <div id="root">
+    <div style="font-family: Arial, sans-serif; padding: 24px; color: #334155;">
+      Loading ISE Check-in...
+    </div>
+  </div>
+
+  <script>
+    function showAppError(title, detail) {
+      var root = document.getElementById("root");
+      if (!root) return;
+
+      root.innerHTML =
+        '<div style="font-family: Arial, sans-serif; min-height: 100vh; padding: 24px; background: #f8fafc; color: #7f1d1d;">' +
+          '<div style="max-width: 520px; margin: 0 auto; background: #fff; border: 1px solid #fecaca; border-radius: 16px; padding: 20px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);">' +
+            '<h1 style="font-size: 20px; margin: 0 0 8px; color: #991b1b;">' + title + '</h1>' +
+            '<p style="font-size: 14px; line-height: 1.5; white-space: pre-wrap; color: #334155;">' + String(detail || "Unknown error") + '</p>' +
+            '<p style="margin-top: 16px; font-size: 12px; color: #64748b;">Please screenshot this message and send it to the admin.</p>' +
+          '</div>' +
+        '</div>';
+    }
+
+    window.addEventListener("error", function (event) {
+      showAppError("App failed to load", event.message || "Unknown JavaScript error");
+    });
+
+    window.addEventListener("unhandledrejection", function (event) {
+      var reason = event.reason;
+      var message = reason && reason.message ? reason.message : reason;
+      showAppError("App error", message || "Unknown promise error");
+    });
+  </script>
 
   <script type="text/babel">
     const { useEffect, useMemo, useState } = React;
@@ -71,10 +101,12 @@
     const dateKey = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
     const nowTime = (d = new Date()) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
     const isWfaActive = (ymd) => WFA_ENABLED && ymd >= WFA_START && ymd <= WFA_END;
+
     const toMinutes = (time) => {
       const match = String(time || "").match(/^(\d{1,2}):(\d{2})/);
       return match ? Number(match[1]) * 60 + Number(match[2]) : null;
     };
+
     const normalizeHHMM = (value) => {
       if (value == null || value === "") return "";
       if (typeof value === "number" && value >= 0 && value < 1) {
@@ -85,13 +117,16 @@
       const match = text.match(/^(\d{1,2}):(\d{2})/);
       return match ? `${pad2(match[1])}:${match[2]}` : text;
     };
+
     const fmtDuration = (type) => ({
       FULL_DAY: "Full Day",
       AM: "Morning (AM)",
       PM: "Afternoon (PM)",
       MULTI_DAY: "Multiple Days",
     }[type] || type || "-");
+
     const initials = (name) => String(name || "?").trim().split(/\s+/).slice(0, 2).map(v => v[0]?.toUpperCase()).join("") || "?";
+
     const photoSrc = (user) => {
       const raw = String(user?.photo_base64 || "").trim();
       if (!raw) return "";
@@ -147,7 +182,8 @@
         danger: "bg-red-600 text-white hover:bg-red-700",
         ghost: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
         soft: "bg-blue-50 text-blue-700 hover:bg-blue-100",
-      }[variant];
+      }[variant] || "bg-blue-600 text-white hover:bg-blue-700";
+
       return (
         <button type={type} onClick={onClick} disabled={disabled}
           className={`w-full rounded-xl px-4 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${variantClass} ${className}`}>
@@ -176,7 +212,7 @@
     );
 
     const Toast = ({ toast }) => toast && (
-      <div className={`fixed left-1/2 top-5 z-[70] -translate-x-1/2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-xl ${toast.type === "err" ? "bg-red-600" : "bg-emerald-600"}`}>
+      <div className={`fixed left-1/2 top-5 z-[70] max-w-[92vw] -translate-x-1/2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-xl ${toast.type === "err" ? "bg-red-600" : "bg-emerald-600"}`}>
         {toast.msg}
       </div>
     );
@@ -212,9 +248,8 @@
         violet: "bg-violet-100 text-violet-700",
         gray: "bg-slate-100 text-slate-600",
       };
-      return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${tones[tone]}`}>{text}</span>;
+      return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${tones[tone] || tones.blue}`}>{text}</span>;
     };
-
 
     const ProgressBar = ({ current, max, label }) => {
       const value = Number(current || 0);
@@ -237,8 +272,8 @@
       );
     };
 
-
     const formatTimeLabel = (value) => normalizeHHMM(value) || "-";
+
     const formatMinutesAsDuration = (mins) => {
       if (!Number.isFinite(mins) || mins <= 0) return "0h";
       const hours = Math.floor(mins / 60);
@@ -293,7 +328,7 @@
                 const width = Math.max(8, ((clampedEnd - clampedStart) / totalRange) * 100);
                 return (
                   <div
-                    key={block.booking_id}
+                    key={block.booking_id || `${block.room_name}-${block.start_time}-${block.end_time}`}
                     className="absolute overflow-hidden rounded-lg border border-amber-600 bg-amber-500 px-2 py-1 text-white shadow-sm"
                     style={{
                       left: `${Math.max(0, left)}%`,
@@ -301,7 +336,7 @@
                       top: `${10 + block.laneIndex * 28}px`,
                       minHeight: "23px",
                     }}
-                    title={`${formatTimeLabel(block.start_time)} - ${formatTimeLabel(block.end_time)} | ${block.purpose}`}
+                    title={`${formatTimeLabel(block.start_time)} - ${formatTimeLabel(block.end_time)} | ${block.purpose || "Booking"}`}
                   >
                     <div className="whitespace-nowrap text-[10px] font-bold">
                       {formatTimeLabel(block.start_time)} - {formatTimeLabel(block.end_time)}
@@ -424,7 +459,9 @@
             start_time: normalizeHHMM(item.start_time),
             end_time: normalizeHHMM(item.end_time),
           })));
-        } else throw new Error(result.error || "Unable to load room bookings");
+        } else {
+          throw new Error(result.error || "Unable to load room bookings");
+        }
       };
 
       useEffect(() => {
@@ -462,15 +499,18 @@
           setLocation({ loading: false, coords: null, closest: null, distance: null, error: "Geolocation is not supported." });
           return;
         }
+
         setLocation(prev => ({ ...prev, loading: true, error: "" }));
         navigator.geolocation.getCurrentPosition((position) => {
           const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
           let closest = null;
           let minimum = Infinity;
+
           LOCATIONS.forEach(point => {
             const d = distanceMeters(coords.lat, coords.lng, point.lat, point.lng);
             if (d < minimum) { minimum = d; closest = point; }
           });
+
           setLocation({ loading: false, coords, closest, distance: Math.round(minimum), error: "" });
         }, (error) => {
           const msg = error.code === 1 ? "Please allow location access." : "Unable to retrieve location.";
@@ -479,10 +519,12 @@
       };
 
       const todayRow = useMemo(() => logs.find(item => item.date === today) || null, [logs, today]);
+
       const activeLeave = useMemo(() => myLeaves.find(item => {
         if (String(item.record_status).toUpperCase() !== "ACTIVE") return false;
         return item.start_date <= today && today <= (item.end_date || item.start_date);
       }) || null, [myLeaves, today]);
+
       const fullDayLeave = ["FULL_DAY", "MULTI_DAY"].includes(activeLeave?.duration_type);
       const amLeave = activeLeave?.duration_type === "AM";
       const checkedIn = Boolean(todayRow?.checkin_time && todayRow.checkin_time !== "-");
@@ -525,8 +567,11 @@
           notify("Please complete all fields.", "err"); return;
         }
         const result = await apiPost({
-          action: "register", name: authForm.name, email: authForm.email,
-          password: authForm.password, device_id: getDeviceId(),
+          action: "register",
+          name: authForm.name,
+          email: authForm.email,
+          password: authForm.password,
+          device_id: getDeviceId(),
         });
         if (!result.ok) { notify(result.error || "Registration failed", "err"); return; }
         setCurrentUser(result.user);
@@ -539,7 +584,10 @@
           notify("Please enter your email and password.", "err"); return;
         }
         const result = await apiPost({
-          action: "login", email: authForm.email, password: authForm.password, device_id: getDeviceId(),
+          action: "login",
+          email: authForm.email,
+          password: authForm.password,
+          device_id: getDeviceId(),
         });
         if (!result.ok) {
           notify(result.error_code === "DEVICE_MISMATCH"
@@ -626,13 +674,23 @@
         }
 
         const payload = event === "IN" ? {
-          action: "log", event: "IN", email: currentUser.email, device_id: getDeviceId(),
+          action: "log",
+          event: "IN",
+          email: currentUser.email,
+          device_id: getDeviceId(),
           coords: `${location.coords.lat.toFixed(6)}, ${location.coords.lng.toFixed(6)}`,
-          location: inRange ? location.closest.name : "WFA_REMOTE", reason, latetime, latecheck,
+          location: inRange ? location.closest.name : "WFA_REMOTE",
+          reason,
+          latetime,
+          latecheck,
         } : {
-          action: "log", event: "OUT", email: currentUser.email, device_id: getDeviceId(),
+          action: "log",
+          event: "OUT",
+          email: currentUser.email,
+          device_id: getDeviceId(),
           session_id: localStorage.getItem(`geocheck_session_${currentUser.email}`) || "",
         };
+
         const result = await apiPost(payload);
         if (!result.ok) { notify(result.error || "Attendance action failed", "err"); return; }
         if (event === "IN") localStorage.setItem(`geocheck_session_${currentUser.email}`, result.session_id || "");
@@ -643,19 +701,39 @@
       });
 
       const handleSubmitLeave = () => execute("Submitting leave...", async () => {
-        if (!leaveForm.leave_type_code || !leaveForm.reason.trim()) { notify("Please choose leave type and enter a reason.", "err"); return; }
-        if (leaveForm.end_date < leaveForm.start_date) { notify("End date cannot be before start date.", "err"); return; }
+        if (!leaveForm.leave_type_code || !leaveForm.reason.trim()) {
+          notify("Please choose leave type and enter a reason.", "err"); return;
+        }
+        if (leaveForm.end_date < leaveForm.start_date) {
+          notify("End date cannot be before start date.", "err"); return;
+        }
         const result = await apiPost({
-          action: "submitLeave", email: currentUser.email, device_id: getDeviceId(), ...leaveForm
+          action: "submitLeave",
+          email: currentUser.email,
+          device_id: getDeviceId(),
+          ...leaveForm,
         });
         if (!result.ok) { notify(result.error || "Leave submission failed", "err"); return; }
-        setLeaveForm(form => ({ ...form, duration_type: "FULL_DAY", start_date: today, end_date: today, reason: "", attachment_url: "", handover_note: "" }));
+        setLeaveForm(form => ({
+          ...form,
+          duration_type: "FULL_DAY",
+          start_date: today,
+          end_date: today,
+          reason: "",
+          attachment_url: "",
+          handover_note: "",
+        }));
         await refreshLeaves();
         notify("Leave request saved.");
       });
 
       const leaveAction = (action, leaveId, label) => execute(label, async () => {
-        const result = await apiPost({ action, email: currentUser.email, device_id: getDeviceId(), leave_id: leaveId });
+        const result = await apiPost({
+          action,
+          email: currentUser.email,
+          device_id: getDeviceId(),
+          leave_id: leaveId,
+        });
         if (!result.ok) { notify(result.error || "Action failed", "err"); return; }
         await refreshLeaves();
         if (result.form_file_url) window.open(result.form_file_url, "_blank");
@@ -669,9 +747,14 @@
 
       const handleBookRoom = () => execute("Booking room...", async () => {
         if (!roomForm.purpose.trim()) { notify("Please enter a booking purpose.", "err"); return; }
-        if (toMinutes(roomForm.start_time) >= toMinutes(roomForm.end_time)) { notify("Please select a valid time range.", "err"); return; }
+        if (toMinutes(roomForm.start_time) >= toMinutes(roomForm.end_time)) {
+          notify("Please select a valid time range.", "err"); return;
+        }
         const result = await apiPost({
-          action: "bookRoom", email: currentUser.email, device_id: getDeviceId(), ...roomForm
+          action: "bookRoom",
+          email: currentUser.email,
+          device_id: getDeviceId(),
+          ...roomForm,
         });
         if (!result.ok) { notify(result.error || "Room booking failed", "err"); return; }
         setRoomDate(roomForm.book_date);
@@ -683,7 +766,10 @@
       const cancelRoom = (bookingId) => execute("Cancelling booking...", async () => {
         if (!window.confirm("Cancel this booking?")) return;
         const result = await apiPost({
-          action: "cancelRoomBooking", email: currentUser.email, device_id: getDeviceId(), booking_id: bookingId
+          action: "cancelRoomBooking",
+          email: currentUser.email,
+          device_id: getDeviceId(),
+          booking_id: bookingId,
         });
         if (!result.ok) { notify(result.error || "Cancellation failed", "err"); return; }
         await refreshRoomBookings(roomDate);
@@ -714,9 +800,11 @@
                   <Input required label="Full Name" placeholder="Full name" value={authForm.name}
                     onChange={event => setAuthForm({ ...authForm, name: event.target.value })} />
                 )}
+
                 <Input required label="Email" type="email" placeholder="name@chula.ac.th" value={authForm.email}
                   disabled={forgotMode && resetStage === "confirm"}
                   onChange={event => setAuthForm({ ...authForm, email: event.target.value })} />
+
                 {!forgotMode && (
                   <Input required label="Password" type="password" placeholder="••••••••" value={authForm.password}
                     onChange={event => setAuthForm({ ...authForm, password: event.target.value })} />
@@ -850,7 +938,7 @@
                   )}
 
                   <div className="mt-5 grid grid-cols-2 gap-3">
-                    <Button variant="success" onClick={() => handleAttendance("IN")} disabled={checkedIn && !checkedOut || fullDayLeave}>Check In</Button>
+                    <Button variant="success" onClick={() => handleAttendance("IN")} disabled={(checkedIn && !checkedOut) || fullDayLeave}>Check In</Button>
                     <Button variant="danger" onClick={() => handleAttendance("OUT")} disabled={!checkedIn || checkedOut}>Check Out</Button>
                   </div>
                 </Card>
@@ -1027,7 +1115,7 @@
                               <RoomTimeline items={items} />
                               <div className="mt-4 space-y-2">
                                 {items.map(booking => (
-                                  <div key={booking.booking_id} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                                  <div key={booking.booking_id || `${booking.room_name}-${booking.start_time}`} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
                                     <div className="flex items-start justify-between gap-3">
                                       <div className="min-w-0">
                                         <div className="flex flex-wrap items-center gap-2">
@@ -1096,7 +1184,6 @@
                 </Card>
               </div>
             )}
-
           </main>
 
           <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white pt-2">
@@ -1117,7 +1204,11 @@
       );
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    try {
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    } catch (error) {
+      showAppError("Render failed", error && error.message ? error.message : error);
+    }
   </script>
 </body>
 </html>
