@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>ISECheckIN - Employee Attendance</title>
+
+  <link rel="preconnect" href="https://cdn.tailwindcss.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.10/babel.min.js"></script>
+
+  <style>
+    html { -webkit-tap-highlight-color: transparent; }
+    body { -webkit-font-smoothing: antialiased; }
+    .safe-bottom { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+  </style>
+</head>
+
+<body class="bg-slate-100 text-slate-800">
+  <div id="root">
+    <div style="font-family: Arial, sans-serif; padding: 24px; color: #334155;">
+      Loading ISE Check-in...
+    </div>
+  </div>
+
+  <script>
+    function escapeAppErrorText(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function showAppError(title, detail) {
+      var root = document.getElementById("root");
+      if (!root) return;
+
+      var errorRef = "WEB-" + Date.now().toString(36).toUpperCase();
+
+      root.innerHTML =
+        '<div style="font-family: Arial, sans-serif; min-height: 100vh; padding: 24px; background: #f8fafc; color: #7f1d1d;">' +
+          '<div style="max-width: 520px; margin: 0 auto; background: #fff; border: 1px solid #fecaca; border-radius: 16px; padding: 20px; box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);">' +
+            '<h1 style="font-size: 20px; margin: 0 0 8px; color: #991b1b;">' + escapeAppErrorText(title) + '</h1>' +
+            '<p style="font-size: 14px; line-height: 1.5; white-space: pre-wrap; color: #334155;">' + escapeAppErrorText(detail || "Unknown error") + '</p>' +
+            '<p style="margin-top: 16px; font-size: 12px; color: #64748b;">Reference: ' + errorRef + '</p>' +
+            '<button onclick="location.reload()" style="margin-top:14px;border:0;border-radius:10px;background:#991b1b;color:#fff;padding:10px 16px;font-weight:700;">Reload app</button>' +
+          '</div>' +
+        '</div>';
+    }
+
+    window.addEventListener("error", function (event) {
+      showAppError("App failed to load", event.message || "Unknown JavaScript error");
+    });
+
+    window.addEventListener("unhandledrejection", function (event) {
+      var reason = event.reason;
+      var message = reason && reason.message ? reason.message : reason;
+      showAppError("App error", message || "Unknown promise error");
+    });
+  </script>
+
+  <script type="text/babel">
+    const { useEffect, useMemo, useState } = React;
+    const CLIENT_VERSION = "2.1.0";
+
+    // ===== WFA WINDOW =====
+    const WFA_ENABLED = true;
+    const WFA_START = "2026-03-14";
+    const WFA_END   = "2026-03-31";
+
+    // ===== APPS SCRIPT API =====
+    // Replace only if you deploy Apps Script using a new deployment URL.
+    const API_URL = "https://script.google.com/macros/s/AKfycbyElv6Mbutr4lYqbhmUEHwW9mJpa0uQJcDHZ8bGV55nxLzCRNJAcHUTBLT8wrjmZypI/exec";
+
+    const ROOMS = [
+      "ISE Meeting Room 1 (1st Fl.)",
+      "ISE Meeting Room 2 (2nd Fl.)",
+      "ISE Meeting Room 3 (Interhub)",
+    ];
+
+    const LOCATIONS = [
+      { name: "ISE Headquarters", lat: 13.73656068, lng: 100.5333925, radius: 50 },
+      //{ name: "Eng Bldg 1", lat: 13.736649190639286, lng: 100.53261809104578, radius: 30 },
+      { name: "ChulaPat 14", lat: 13.74406954, lng: 100.525551, radius: 50 },
+      //{ name: "Sala Phra Kieo", lat: 13.735636392313674, lng:100.53152791674027, radius:100},
+    ];
+
+    const Icon = ({ path, size = 22, className = "" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
+        fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        {path}
+      </svg>
+    );
+
+    const Icons = {
+      Check: (p) => <Icon {...p} path={<><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></>} />,
+      Pin: (p) => <Icon {...p} path={<><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></>} />,
+      Login: (p) => <Icon {...p} path={<><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></>} />,
+      Logout: (p) => <Icon {...p} path={<><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></>} />,
+      User: (p) => <Icon {...p} path={<><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="20" y1="8" x2="20" y2="14"/><line x1="23" y1="11" x2="17" y2="11"/></>} />,
+      Warning: (p) => <Icon {...p} path={<><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>} />,
+      Calendar: (p) => <Icon {...p} path={<><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></>} />,
+      Door: (p) => <Icon {...p} path={<><path d="M14 4v16"/><path d="M4 4h10"/><path d="M4 20h10"/><path d="M4 4v16"/><path d="M14 12h6"/></>} />,
+      Clock: (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></>} />,
+      Close: (p) => <Icon {...p} path={<><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></>} />,
+      Mail: (p) => <Icon {...p} path={<><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></>} />,
+    };
+
+    const pad2 = (v) => String(v).padStart(2, "0");
+    const dateKey = (d = new Date()) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    const nowTime = (d = new Date()) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    const isWfaActive = (ymd) => WFA_ENABLED && ymd >= WFA_START && ymd <= WFA_END;
+
+    const toMinutes = (time) => {
+      const match = String(time || "").match(/^(\d{1,2}):(\d{2})/);
+      return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+    };
+
+    const normalizeHHMM = (value) => {
+      if (value == null || value === "") return "";
+      if (typeof value === "number" && value >= 0 && value < 1) {
+        const total = Math.round(value * 24 * 60) % 1440;
+        return `${pad2(Math.floor(total / 60))}:${pad2(total % 60)}`;
+      }
+      const text = String(value).trim();
+      const match = text.match(/^(\d{1,2}):(\d{2})/);
+      return match ? `${pad2(match[1])}:${match[2]}` : text;
+    };
+
+    const fmtDuration = (type) => ({
+      FULL_DAY: "Full Day",
+      AM: "Morning (AM)",
+      PM: "Afternoon (PM)",
+      MULTI_DAY: "Multiple Days",
+    }[type] || type || "-");
+
+    const initials = (name) => String(name || "?").trim().split(/\s+/).slice(0, 2).map(v => v[0]?.toUpperCase()).join("") || "?";
+
+    const photoSrc = (user) => {
+      const raw = String(user?.photo_base64 || "").trim();
+      if (!raw) return "";
+      return raw.startsWith("data:image/") ? raw : `data:${user?.photo_mime || "image/jpeg"};base64,${raw}`;
+    };
+
+    function distanceMeters(lat1, lng1, lat2, lng2) {
+      const toRad = (n) => n * Math.PI / 180;
+      const R = 6371000;
+      const dLat = toRad(lat2 - lat1);
+      const dLng = toRad(lng2 - lng1);
+      const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function getDeviceId() {
+      let id = localStorage.getItem("geocheck_device_id");
+      if (!id) {
+        id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random()}`;
+        localStorage.setItem("geocheck_device_id", id);
+      }
+      return id;
+    }
+
+    async function apiPost(payload) {
+      const requestPayload = { ...payload, client_version: CLIENT_VERSION };
+      const readOnly = ["ping", "fetchLogs", "fetchMyLeaves", "fetchLeaveTypes", "fetchRoomBookings"].includes(payload.action);
+      const maxAttempts = readOnly ? 2 : 1;
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const controller = new AbortController();
+        const timeoutId = window.setTimeout(() => controller.abort(), 18000);
+        try {
+          const response = await fetch(API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify(requestPayload),
+            redirect: "follow",
+            signal: controller.signal,
+          });
+          const text = await response.text();
+          let result;
+          try {
+            result = JSON.parse(text);
+          } catch {
+            result = {
+              ok: false,
+              error_code: "INVALID_RESPONSE",
+              error: `Apps Script returned a non-JSON response (HTTP ${response.status}).`,
+              response_preview: text.slice(0, 180),
+            };
+          }
+
+          if (!result.ok && result.request_id && !String(result.error || "").includes(result.request_id)) {
+            result.error = `${result.error || "Request failed"} [Ref: ${result.request_id}]`;
+          }
+          return result;
+        } catch (error) {
+          if (attempt < maxAttempts) continue;
+          const timedOut = error && error.name === "AbortError";
+          return {
+            ok: false,
+            error_code: timedOut ? "CLIENT_TIMEOUT" : "NETWORK_ERROR",
+            error: timedOut
+              ? "The server took too long to respond. Please retry."
+              : (error.message || "Network error"),
+          };
+        } finally {
+          window.clearTimeout(timeoutId);
+        }
+      }
+    }
+
+    const Card = ({ children, className = "" }) => (
+      <section className={`rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}>{children}</section>
+    );
+
+    const Button = ({ children, onClick, variant = "primary", disabled = false, className = "", type = "button" }) => {
+      const variantClass = {
+        primary: "bg-blue-600 text-white hover:bg-blue-700",
+        success: "bg-emerald-600 text-white hover:bg-emerald-700",
+        danger: "bg-red-600 text-white hover:bg-red-700",
+        ghost: "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50",
+        soft: "bg-blue-50 text-blue-700 hover:bg-blue-100",
+      }[variant] || "bg-blue-600 text-white hover:bg-blue-700";
+
+      return (
+        <button type={type} onClick={onClick} disabled={disabled}
+          className={`w-full rounded-xl px-4 py-3 font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${variantClass} ${className}`}>
+          {children}
+        </button>
+      );
+    };
+
+    const Input = ({ label, value, onChange, type = "text", placeholder = "", min = undefined, required = false, disabled = false, maxLength = undefined, autoComplete = undefined }) => (
+      <label className="block mb-4">
+        <span className="mb-1.5 block text-sm font-medium text-slate-700">{label}{required && <span className="text-red-500"> *</span>}</span>
+        <input value={value} onChange={onChange} type={type} placeholder={placeholder} min={min}
+          disabled={disabled} maxLength={maxLength} autoComplete={autoComplete}
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 outline-none ring-blue-500 transition focus:ring-2 disabled:bg-slate-100 disabled:text-slate-500" />
+      </label>
+    );
+
+    const Select = ({ label, value, onChange, children }) => (
+      <label className="block mb-4">
+        <span className="mb-1.5 block text-sm font-medium text-slate-700">{label}</span>
+        <select value={value} onChange={onChange}
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 outline-none ring-blue-500 transition focus:ring-2">
+          {children}
+        </select>
+      </label>
+    );
+
+    const Toast = ({ toast }) => toast && (
+      <div className={`fixed left-1/2 top-5 z-[70] max-w-[92vw] -translate-x-1/2 rounded-xl px-4 py-3 text-sm font-semibold text-white shadow-xl ${toast.type === "err" ? "bg-red-600" : "bg-emerald-600"}`}>
+        {toast.msg}
+      </div>
+    );
+
+    const Loader = ({ message }) => (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-white/70 backdrop-blur-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white px-7 py-6 text-center shadow-lg">
+          <div className="mx-auto mb-3 h-9 w-9 animate-spin rounded-full border-4 border-slate-200 border-t-red-600"></div>
+          <p className="text-sm font-semibold text-slate-700">{message}</p>
+        </div>
+      </div>
+    );
+
+    const Avatar = ({ user }) => {
+      const [failed, setFailed] = useState(false);
+      const src = failed ? "" : photoSrc(user);
+      return src ? (
+        <img src={src} onError={() => setFailed(true)} alt={user?.name || "Profile"}
+          className="h-10 w-10 rounded-full border border-slate-200 object-cover" />
+      ) : (
+        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 font-bold text-white">
+          {initials(user?.name)}
+        </div>
+      );
+    };
+
+    const StatusPill = ({ text, tone = "blue" }) => {
+      const tones = {
+        blue: "bg-blue-100 text-blue-700",
+        green: "bg-emerald-100 text-emerald-700",
+        orange: "bg-orange-100 text-orange-700",
+        red: "bg-red-100 text-red-700",
+        violet: "bg-violet-100 text-violet-700",
+        gray: "bg-slate-100 text-slate-600",
+      };
+      return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${tones[tone] || tones.blue}`}>{text}</span>;
+    };
+
+    const ProgressBar = ({ current, max, label }) => {
+      const value = Number(current || 0);
+      const limit = Number(max || 0);
+      const percentage = limit ? Math.min(100, Math.max(0, (value / limit) * 100)) : 0;
+      const isOverLimit = value > limit;
+      return (
+        <div className="mb-4">
+          <div className="mb-1 flex justify-between text-xs font-medium text-slate-600">
+            <span>{label}</span>
+            <span>{value} / {limit}</span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+            <div
+              className={`h-2.5 rounded-full transition-all duration-500 ${isOverLimit ? "bg-red-500" : "bg-indigo-500"}`}
+              style={{ width: `${percentage}%` }}
+            />
+          </div>
+        </div>
+      );
+    };
+
+    const formatTimeLabel = (value) => normalizeHHMM(value) || "-";
+
+    const formatMinutesAsDuration = (mins) => {
+      if (!Number.isFinite(mins) || mins <= 0) return "0h";
+      const hours = Math.floor(mins / 60);
+      const minutes = mins % 60;
+      if (hours && minutes) return `${hours}h ${minutes}m`;
+      if (hours) return `${hours}h`;
+      return `${minutes}m`;
+    };
+
+    const ROOM_TIMELINE_START = 8 * 60;
+    const ROOM_TIMELINE_END = 20 * 60;
+    const ROOM_TIMELINE_LABELS = [8, 10, 12, 14, 16, 18, 20];
+
+    const buildTimelineBlocks = (items) => {
+      const sorted = [...items]
+        .map(item => ({
+          ...item,
+          startMin: toMinutes(normalizeHHMM(item.start_time)),
+          endMin: toMinutes(normalizeHHMM(item.end_time)),
+        }))
+        .filter(item => item.startMin != null && item.endMin != null && item.endMin > item.startMin)
+        .sort((a, b) => a.startMin - b.startMin);
+
+      const lanes = [];
+      return sorted.map(item => {
+        let laneIndex = 0;
+        while (lanes[laneIndex] != null && lanes[laneIndex] > item.startMin) laneIndex += 1;
+        lanes[laneIndex] = item.endMin;
+        return { ...item, laneIndex };
+      });
+    };
+
+    const RoomTimeline = ({ items }) => {
+      const blocks = buildTimelineBlocks(items);
+      const laneCount = Math.max(1, ...blocks.map(block => block.laneIndex + 1), 1);
+      const totalRange = ROOM_TIMELINE_END - ROOM_TIMELINE_START;
+
+      return (
+        <div className="mt-3">
+          <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+            <div className="absolute inset-0 flex">
+              {Array.from({ length: 12 }).map((_, index) => (
+                <div key={index} className={`flex-1 ${index === 11 ? "" : "border-r border-slate-200"}`} />
+              ))}
+            </div>
+
+            <div className="relative" style={{ height: `${Math.max(56, 18 + laneCount * 28)}px` }}>
+              {blocks.map(block => {
+                const clampedStart = Math.max(block.startMin, ROOM_TIMELINE_START);
+                const clampedEnd = Math.min(block.endMin, ROOM_TIMELINE_END);
+                const left = ((clampedStart - ROOM_TIMELINE_START) / totalRange) * 100;
+                const width = Math.max(8, ((clampedEnd - clampedStart) / totalRange) * 100);
+                return (
+                  <div
+                    key={block.booking_id || `${block.room_name}-${block.start_time}-${block.end_time}`}
+                    className="absolute overflow-hidden rounded-lg border border-amber-600 bg-amber-500 px-2 py-1 text-white shadow-sm"
+                    style={{
+                      left: `${Math.max(0, left)}%`,
+                      width: `${Math.min(100 - Math.max(0, left), width)}%`,
+                      top: `${10 + block.laneIndex * 28}px`,
+                      minHeight: "23px",
+                    }}
+                    title={`${formatTimeLabel(block.start_time)} - ${formatTimeLabel(block.end_time)} | ${block.purpose || "Booking"}`}
+                  >
+                    <div className="whitespace-nowrap text-[10px] font-bold">
+                      {formatTimeLabel(block.start_time)} - {formatTimeLabel(block.end_time)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="mt-2 grid grid-cols-7 px-1 text-[10px] text-slate-500">
+            {ROOM_TIMELINE_LABELS.map((hour, index) => (
+              <div key={hour} className={index === ROOM_TIMELINE_LABELS.length - 1 ? "text-right" : "text-left"}>
+                {`${pad2(hour)}:00`}
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    function App() {
+      const today = dateKey();
+      const [bootLoading, setBootLoading] = useState(true);
+      const [loading, setLoading] = useState(false);
+      const [busyText, setBusyText] = useState("Loading...");
+      const [toast, setToast] = useState(null);
+
+      const [currentUser, setCurrentUser] = useState(null);
+      const [authMode, setAuthMode] = useState("login");
+      const [forgotMode, setForgotMode] = useState(false);
+      const [deviceVerifyMode, setDeviceVerifyMode] = useState(false);
+      const [deviceVerifyCode, setDeviceVerifyCode] = useState("");
+      const [resetStage, setResetStage] = useState("request");
+      const [resetForm, setResetForm] = useState({ code: "", newPassword: "", confirmPassword: "" });
+      const [authForm, setAuthForm] = useState({ name: "", email: "", password: "" });
+
+      const [activeTab, setActiveTab] = useState("attendance");
+      const [clock, setClock] = useState(new Date());
+      const [lateReason, setLateReason] = useState("");
+      const [logs, setLogs] = useState([]);
+      const [location, setLocation] = useState({ loading: false, coords: null, closest: null, distance: null, error: "" });
+
+      const [leaveTypes, setLeaveTypes] = useState([]);
+      const [myLeaves, setMyLeaves] = useState([]);
+      const [leaveForm, setLeaveForm] = useState({
+        leave_type_code: "",
+        duration_type: "FULL_DAY",
+        start_date: today,
+        end_date: today,
+        reason: "",
+        attachment_url: "",
+        handover_note: "",
+      });
+
+      const [roomDate, setRoomDate] = useState(today);
+      const [roomBookings, setRoomBookings] = useState([]);
+      const [roomForm, setRoomForm] = useState({
+        room_name: ROOMS[0],
+        book_date: today,
+        start_time: "09:00",
+        end_time: "10:00",
+        purpose: "",
+        note: "",
+      });
+
+      const notify = (msg, type = "ok") => {
+        setToast({ msg, type });
+        window.setTimeout(() => setToast(null), 3600);
+      };
+
+      const execute = async (label, fn) => {
+        setBusyText(label);
+        setLoading(true);
+        try { return await fn(); }
+        finally { setLoading(false); }
+      };
+
+      useEffect(() => {
+        try {
+          const stored = localStorage.getItem("geocheck_user_v1");
+          if (stored) setCurrentUser(JSON.parse(stored));
+        } catch {}
+        setBootLoading(false);
+      }, []);
+
+      useEffect(() => {
+        if (currentUser) localStorage.setItem("geocheck_user_v1", JSON.stringify(currentUser));
+        else localStorage.removeItem("geocheck_user_v1");
+      }, [currentUser]);
+
+      useEffect(() => {
+        const timer = window.setInterval(() => setClock(new Date()), 1000);
+        return () => window.clearInterval(timer);
+      }, []);
+
+      const refreshLogs = async () => {
+        if (!currentUser?.id) return;
+        const result = await apiPost({ action: "fetchLogs", emp_id: currentUser.id });
+        if (result.ok) setLogs(result.logs || []);
+        else throw new Error(result.error || "Unable to load attendance records");
+      };
+
+      const refreshLeaves = async () => {
+        if (!currentUser?.id) return;
+        const result = await apiPost({ action: "fetchMyLeaves", emp_id: currentUser.id });
+        if (result.ok) setMyLeaves(result.leaves || []);
+        else throw new Error(result.error || "Unable to load leave records");
+      };
+
+      const refreshLeaveTypes = async () => {
+        const cacheKey = "geocheck_leave_types_v1";
+        try {
+          const cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
+          if (cached?.expiresAt > Date.now() && Array.isArray(cached.data)) {
+            setLeaveTypes(cached.data);
+            return;
+          }
+        } catch {}
+        const result = await apiPost({ action: "fetchLeaveTypes" });
+        if (result.ok) {
+          const data = result.leave_types || [];
+          setLeaveTypes(data);
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({
+              data,
+              expiresAt: Date.now() + (12 * 60 * 60 * 1000),
+            }));
+          } catch {}
+        }
+        else throw new Error(result.error || "Unable to load leave types");
+      };
+
+      const refreshRoomBookings = async (bookDate = roomDate) => {
+        const result = await apiPost({ action: "fetchRoomBookings", book_date: bookDate });
+        if (result.ok) {
+          setRoomBookings((result.bookings || []).map(item => ({
+            ...item,
+            start_time: normalizeHHMM(item.start_time),
+            end_time: normalizeHHMM(item.end_time),
+          })));
+        } else {
+          throw new Error(result.error || "Unable to load room bookings");
+        }
+      };
+
+      useEffect(() => {
+        if (!currentUser?.id) return;
+        // Render the app immediately and hydrate attendance data in the background.
+        // Location is intentionally requested only when the employee needs it.
+        (async () => {
+          const results = await Promise.allSettled([refreshLogs(), refreshLeaves()]);
+          const failed = results.find(item => item.status === "rejected");
+          if (failed) notify(failed.reason?.message || "Some data could not be loaded", "err");
+        })();
+      }, [currentUser?.id]);
+
+      useEffect(() => {
+        if (!currentUser?.id || activeTab !== "leave" || leaveTypes.length) return;
+        refreshLeaveTypes().catch(error => notify(error.message, "err"));
+      }, [activeTab, currentUser?.id, leaveTypes.length]);
+
+      useEffect(() => {
+        if (!currentUser?.id || activeTab !== "rooms") return;
+        execute("Loading room availability...", async () => {
+          try { await refreshRoomBookings(roomDate); }
+          catch (error) { notify(error.message, "err"); }
+        });
+      }, [roomDate, activeTab, currentUser?.id]);
+
+      useEffect(() => {
+        if (!leaveTypes.length) return;
+        setLeaveForm(form => ({ ...form, leave_type_code: form.leave_type_code || leaveTypes[0].leave_type_code }));
+      }, [leaveTypes]);
+
+      useEffect(() => {
+        if (["FULL_DAY", "AM", "PM"].includes(leaveForm.duration_type)) {
+          setLeaveForm(form => ({ ...form, end_date: form.start_date }));
+        }
+      }, [leaveForm.duration_type, leaveForm.start_date]);
+
+      const getLocation = () => {
+        if (location.loading) return;
+        if (!navigator.geolocation) {
+          setLocation({ loading: false, coords: null, closest: null, distance: null, error: "Geolocation is not supported." });
+          return;
+        }
+
+        setLocation(prev => ({ ...prev, loading: true, error: "" }));
+        navigator.geolocation.getCurrentPosition((position) => {
+          const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+          let closest = null;
+          let minimum = Infinity;
+
+          LOCATIONS.forEach(point => {
+            const d = distanceMeters(coords.lat, coords.lng, point.lat, point.lng);
+            if (d < minimum) { minimum = d; closest = point; }
+          });
+
+          setLocation({ loading: false, coords, closest, distance: Math.round(minimum), error: "" });
+        }, (error) => {
+          const msg = error.code === 1 ? "Please allow location access." : "Unable to retrieve location.";
+          setLocation({ loading: false, coords: null, closest: null, distance: null, error: msg });
+        }, { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 });
+      };
+
+      const todayRow = useMemo(() => logs.find(item => item.date === today) || null, [logs, today]);
+
+      const activeLeave = useMemo(() => myLeaves.find(item => {
+        if (String(item.record_status).toUpperCase() !== "ACTIVE") return false;
+        return item.start_date <= today && today <= (item.end_date || item.start_date);
+      }) || null, [myLeaves, today]);
+
+      const fullDayLeave = ["FULL_DAY", "MULTI_DAY"].includes(activeLeave?.duration_type);
+      const amLeave = activeLeave?.duration_type === "AM";
+      const checkedIn = Boolean(todayRow?.checkin_time && todayRow.checkin_time !== "-");
+      const checkedOut = Boolean(todayRow?.checkout_time && todayRow.checkout_time !== "-");
+      const limit = location.closest?.radius || 10;
+      const inRange = location.distance != null && location.distance <= limit;
+      const startMinutes = 8 * 60 + 32;
+      const currentMinutes = clock.getHours() * 60 + clock.getMinutes();
+      const late = currentMinutes > (amLeave ? 13 * 60 : startMinutes);
+
+      const monthlyStats = useMemo(() => {
+        const monthPrefix = today.slice(0, 7);
+        let lateCount = 0;
+        let lateMinutes = 0;
+
+        logs.forEach(item => {
+          if (!String(item.date || "").startsWith(monthPrefix)) return;
+          const minutes = Number(item.latetime || 0);
+          const isLate = String(item.latecheck || "").toUpperCase() === "TRUE" || minutes > 0;
+          if (isLate) {
+            lateCount += 1;
+            lateMinutes += minutes;
+          }
+        });
+
+        return { lateCount, lateMinutes };
+      }, [logs, today]);
+
+      const attendanceStatus = useMemo(() => {
+        if (fullDayLeave) return { text: "ON LEAVE", tone: "violet" };
+        if (todayRow?.attendance_status === "ABSENT") return { text: "ABSENT", tone: "red" };
+        if (checkedOut) return { text: "COMPLETED", tone: "gray" };
+        if (checkedIn) return { text: "WORKING", tone: "green" };
+        if (late) return { text: "LATE START", tone: "orange" };
+        return { text: "READY", tone: "blue" };
+      }, [fullDayLeave, todayRow, checkedOut, checkedIn, late]);
+
+      const handleRegister = () => execute("Creating account...", async () => {
+        if (!authForm.name || !authForm.email || !authForm.password) {
+          notify("Please complete all fields.", "err"); return;
+        }
+        const result = await apiPost({
+          action: "register",
+          name: authForm.name,
+          email: authForm.email,
+          password: authForm.password,
+          device_id: getDeviceId(),
+        });
+        if (!result.ok) { notify(result.error || "Registration failed", "err"); return; }
+        setCurrentUser(result.user);
+        setAuthForm({ name: "", email: "", password: "" });
+        notify("Account created successfully.");
+      });
+
+      const handleLogin = () => execute("Signing in...", async () => {
+        if (!authForm.email || !authForm.password) {
+          notify("Please enter your email and password.", "err"); return;
+        }
+        const result = await apiPost({
+          action: "login",
+          email: authForm.email,
+          password: authForm.password,
+          device_id: getDeviceId(),
+        });
+        if (!result.ok) {
+          if (result.error_code === "DEVICE_VERIFICATION_REQUIRED") {
+            setDeviceVerifyMode(true);
+            setDeviceVerifyCode("");
+            notify(result.message || "Check your email for the verification code.");
+            return;
+          }
+          notify(result.error || "Login failed", "err");
+          return;
+        }
+        setCurrentUser(result.user);
+        setAuthForm({ name: "", email: "", password: "" });
+        notify(`Welcome back, ${result.user.name}.`);
+      });
+
+      const handleConfirmTrustedDevice = () => execute("Verifying browser...", async () => {
+        if (!/^\d{6}$/.test(deviceVerifyCode.trim())) {
+          notify("Please enter the 6-digit code from your email.", "err"); return;
+        }
+        const result = await apiPost({
+          action: "confirmTrustedDevice",
+          email: authForm.email,
+          device_id: getDeviceId(),
+          verification_code: deviceVerifyCode.trim(),
+        });
+        if (!result.ok) { notify(result.error || "Verification failed", "err"); return; }
+        setDeviceVerifyMode(false);
+        setDeviceVerifyCode("");
+        setCurrentUser(result.user);
+        setAuthForm({ name: "", email: "", password: "" });
+        notify(result.message || "Browser verified successfully.");
+      });
+
+      const handleForgotPassword = () => execute("Sending reset code...", async () => {
+        if (!authForm.email) {
+          notify("Please enter your email first.", "err"); return;
+        }
+        const result = await apiPost({ action: "forgotPassword", email: authForm.email });
+        if (!result.ok) { notify(result.error || "Unable to submit request", "err"); return; }
+        setResetStage("confirm");
+        setResetForm({ code: "", newPassword: "", confirmPassword: "" });
+        notify(result.message || "If this email is registered, a 6-digit reset code has been sent.");
+      });
+
+      const handleConfirmPasswordReset = () => execute("Changing password...", async () => {
+        if (!/^\d{6}$/.test(resetForm.code.trim())) {
+          notify("Please enter the 6-digit code from your email.", "err"); return;
+        }
+        if (resetForm.newPassword.length < 8) {
+          notify("New password must contain at least 8 characters.", "err"); return;
+        }
+        if (resetForm.newPassword !== resetForm.confirmPassword) {
+          notify("New password and confirmation do not match.", "err"); return;
+        }
+
+        const result = await apiPost({
+          action: "confirmPasswordReset",
+          email: authForm.email,
+          reset_code: resetForm.code.trim(),
+          new_password: resetForm.newPassword,
+        });
+
+        if (!result.ok) {
+          notify(result.error || "Unable to reset password.", "err");
+          return;
+        }
+
+        const resetEmail = authForm.email;
+        setForgotMode(false);
+        setResetStage("request");
+        setResetForm({ code: "", newPassword: "", confirmPassword: "" });
+        setAuthForm({ name: "", email: resetEmail, password: "" });
+        notify(result.message || "Password changed successfully. Please sign in.");
+      });
+
+      const handleLogout = () => {
+        if (!window.confirm("Log out?")) return;
+        setCurrentUser(null);
+        setLogs([]);
+        setMyLeaves([]);
+        setRoomBookings([]);
+        setLocation({ loading: false, coords: null, closest: null, distance: null, error: "" });
+        setActiveTab("attendance");
+      };
+
+      const handleAttendance = (event) => execute(event === "IN" ? "Checking in..." : "Checking out...", async () => {
+        if (event === "IN" && fullDayLeave) { notify("You are on full-day leave today.", "err"); return; }
+        if (!location.coords || location.distance == null) { notify("Verify your location first.", "err"); getLocation(); return; }
+        if (event === "IN" && !inRange && !isWfaActive(today)) {
+          notify(`You are outside ${location.closest?.name || "the office"} allowed range.`, "err"); return;
+        }
+        if (event === "IN" && checkedIn && !checkedOut) { notify("You already checked in today.", "err"); return; }
+        if (event === "OUT" && !checkedIn) { notify("No check-in record for today.", "err"); return; }
+        if (event === "OUT" && checkedOut) { notify("You already checked out today.", "err"); return; }
+
+        let latetime = 0;
+        let latecheck = "FALSE";
+        let reason = "-";
+        if (event === "IN" && late) {
+          const baseline = amLeave ? 13 * 60 : startMinutes;
+          latetime = Math.max(0, currentMinutes - baseline);
+          latecheck = "TRUE";
+          reason = amLeave ? (activeLeave?.reason || "AM leave") : lateReason.trim();
+          if (!amLeave && !reason) { notify("Please enter a reason for late check-in.", "err"); return; }
+        }
+
+        const payload = event === "IN" ? {
+          action: "log",
+          event: "IN",
+          email: currentUser.email,
+          device_id: getDeviceId(),
+          coords: `${location.coords.lat.toFixed(6)}, ${location.coords.lng.toFixed(6)}`,
+          location: inRange ? location.closest.name : "WFA_REMOTE",
+          reason,
+          latetime,
+          latecheck,
+        } : {
+          action: "log",
+          event: "OUT",
+          email: currentUser.email,
+          device_id: getDeviceId(),
+          session_id: localStorage.getItem(`geocheck_session_${currentUser.email}`) || "",
+        };
+
+        const result = await apiPost(payload);
+        if (!result.ok) { notify(result.error || "Attendance action failed", "err"); return; }
+        if (event === "IN") localStorage.setItem(`geocheck_session_${currentUser.email}`, result.session_id || "");
+        else localStorage.removeItem(`geocheck_session_${currentUser.email}`);
+        setLateReason("");
+        await refreshLogs();
+        notify(event === "IN" ? "Checked in successfully." : "Checked out successfully.");
+      });
+
+      const handleSubmitLeave = () => execute("Submitting leave...", async () => {
+        if (!leaveForm.leave_type_code || !leaveForm.reason.trim()) {
+          notify("Please choose leave type and enter a reason.", "err"); return;
+        }
+        if (leaveForm.end_date < leaveForm.start_date) {
+          notify("End date cannot be before start date.", "err"); return;
+        }
+        const result = await apiPost({
+          action: "submitLeave",
+          email: currentUser.email,
+          device_id: getDeviceId(),
+          ...leaveForm,
+        });
+        if (!result.ok) { notify(result.error || "Leave submission failed", "err"); return; }
+        setLeaveForm(form => ({
+          ...form,
+          duration_type: "FULL_DAY",
+          start_date: today,
+          end_date: today,
+          reason: "",
+          attachment_url: "",
+          handover_note: "",
+        }));
+        await refreshLeaves();
+        notify("Leave request saved.");
+      });
+
+      const leaveAction = (action, leaveId, label) => execute(label, async () => {
+        const result = await apiPost({
+          action,
+          email: currentUser.email,
+          device_id: getDeviceId(),
+          leave_id: leaveId,
+        });
+        if (!result.ok) { notify(result.error || "Action failed", "err"); return; }
+        await refreshLeaves();
+        if (result.form_file_url) window.open(result.form_file_url, "_blank");
+        notify(label.replace("...", "") + " completed.");
+      });
+
+      const cancelLeave = (leaveId) => {
+        if (!window.confirm("Cancel this leave request?")) return;
+        leaveAction("cancelLeave", leaveId, "Cancelling leave...");
+      };
+
+      const handleBookRoom = () => execute("Booking room...", async () => {
+        if (!roomForm.purpose.trim()) { notify("Please enter a booking purpose.", "err"); return; }
+        if (toMinutes(roomForm.start_time) >= toMinutes(roomForm.end_time)) {
+          notify("Please select a valid time range.", "err"); return;
+        }
+        const result = await apiPost({
+          action: "bookRoom",
+          email: currentUser.email,
+          device_id: getDeviceId(),
+          ...roomForm,
+        });
+        if (!result.ok) { notify(result.error || "Room booking failed", "err"); return; }
+        setRoomDate(roomForm.book_date);
+        await refreshRoomBookings(roomForm.book_date);
+        setRoomForm(form => ({ ...form, purpose: "", note: "" }));
+        notify("Room booked.");
+      });
+
+      const cancelRoom = (bookingId) => execute("Cancelling booking...", async () => {
+        if (!window.confirm("Cancel this booking?")) return;
+        const result = await apiPost({
+          action: "cancelRoomBooking",
+          email: currentUser.email,
+          device_id: getDeviceId(),
+          booking_id: bookingId,
+        });
+        if (!result.ok) { notify(result.error || "Cancellation failed", "err"); return; }
+        await refreshRoomBookings(roomDate);
+        notify("Booking cancelled.");
+      });
+
+      if (!currentUser) return (
+        <>
+          <Toast toast={toast} />
+          {(bootLoading || loading) && <Loader message={busyText} />}
+          <main className="flex min-h-screen items-center justify-center px-4 py-8">
+            <div className="w-full max-w-md">
+              <div className="mb-6 text-center">
+                <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-red-700 text-white shadow-lg">
+                  <Icons.Check size={36} />
+                </div>
+                <h1 className="text-3xl font-extrabold text-slate-900">ISE Check-in</h1>
+                <p className="mt-1 text-slate-500">Employee Attendance System</p>
+                <p className="mt-1 text-xs text-slate-400">Version {CLIENT_VERSION}</p>
+              </div>
+
+              <Card className="p-6">
+                <h2 className="mb-5 flex items-center gap-2 text-lg font-bold text-slate-800">
+                  {(forgotMode || deviceVerifyMode) ? <Icons.Mail /> : authMode === "login" ? <Icons.Login /> : <Icons.User />}
+                  {deviceVerifyMode ? "Verify New Browser" : forgotMode ? (resetStage === "request" ? "Request Password Reset" : "Set New Password") : authMode === "login" ? "Employee Login" : "New Account"}
+                </h2>
+
+                {!forgotMode && !deviceVerifyMode && authMode === "register" && (
+                  <Input required label="Full Name" placeholder="Full name" value={authForm.name}
+                    onChange={event => setAuthForm({ ...authForm, name: event.target.value })} />
+                )}
+
+                <Input required label="Email" type="email" placeholder="name@chula.ac.th" value={authForm.email}
+                  disabled={deviceVerifyMode || (forgotMode && resetStage === "confirm")}
+                  onChange={event => setAuthForm({ ...authForm, email: event.target.value })} />
+
+                {!forgotMode && !deviceVerifyMode && (
+                  <Input required label="Password" type="password" placeholder="••••••••" value={authForm.password}
+                    onChange={event => setAuthForm({ ...authForm, password: event.target.value })} />
+                )}
+
+                {deviceVerifyMode ? (
+                  <>
+                    <p className="mb-4 rounded-xl bg-blue-50 p-3 text-sm text-blue-700">
+                      We sent a 6-digit code to your registered email. Enter it once to trust this browser.
+                    </p>
+                    <Input required label="Verification Code" placeholder="6-digit code" value={deviceVerifyCode}
+                      maxLength={6} autoComplete="one-time-code"
+                      onChange={event => setDeviceVerifyCode(event.target.value.replace(/\D/g, ""))} />
+                    <Button onClick={handleConfirmTrustedDevice} disabled={loading}>
+                      {loading ? "Verifying..." : "Verify Browser"}
+                    </Button>
+                    <button className="mt-3 block w-full text-sm text-blue-600 hover:underline"
+                      onClick={() => { setDeviceVerifyMode(false); setDeviceVerifyCode(""); setAuthForm(form => ({ ...form, password: "" })); }}>
+                      Back to login
+                    </button>
+                  </>
+                ) : forgotMode ? (
+                  resetStage === "request" ? (
+                    <>
+                      <p className="mb-4 rounded-xl bg-blue-50 p-3 text-sm text-blue-700">
+                        Enter your registered email. The system will send a 6-digit reset code that expires in 15 minutes.
+                      </p>
+                      <Button onClick={handleForgotPassword} disabled={loading}>
+                        {loading ? "Sending..." : "Send Reset Code"}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">
+                        Check your email for the 6-digit code, then create a new password.
+                      </p>
+                      <Input required label="Reset Code" placeholder="6-digit code" value={resetForm.code}
+                        maxLength={6} autoComplete="one-time-code"
+                        onChange={event => setResetForm({ ...resetForm, code: event.target.value.replace(/\D/g, "") })} />
+                      <Input required label="New Password" type="password" placeholder="Minimum 8 characters" value={resetForm.newPassword}
+                        autoComplete="new-password"
+                        onChange={event => setResetForm({ ...resetForm, newPassword: event.target.value })} />
+                      <Input required label="Confirm New Password" type="password" placeholder="Enter password again" value={resetForm.confirmPassword}
+                        autoComplete="new-password"
+                        onChange={event => setResetForm({ ...resetForm, confirmPassword: event.target.value })} />
+                      <Button onClick={handleConfirmPasswordReset} disabled={loading}>
+                        {loading ? "Changing..." : "Change Password"}
+                      </Button>
+                      <button className="mt-3 block w-full text-sm text-blue-600 hover:underline"
+                        onClick={() => {
+                          setResetStage("request");
+                          setResetForm({ code: "", newPassword: "", confirmPassword: "" });
+                        }}>
+                        Send a new code
+                      </button>
+                    </>
+                  )
+                ) : authMode === "login" ? (
+                  <Button onClick={handleLogin} disabled={loading}>Sign In</Button>
+                ) : (
+                  <Button variant="success" onClick={handleRegister} disabled={loading}>Create Account</Button>
+                )}
+
+                <div className="mt-5 border-t border-slate-100 pt-5 text-center">
+                  {!forgotMode && !deviceVerifyMode && (
+                    <button className="text-sm font-semibold text-blue-600 hover:underline"
+                      onClick={() => { setAuthMode(authMode === "login" ? "register" : "login"); setAuthForm({ name: "", email: "", password: "" }); }}>
+                      {authMode === "login" ? "Register New Employee" : "Back to Login"}
+                    </button>
+                  )}
+                  {!deviceVerifyMode && authMode === "login" && (
+                    <button className="mt-3 block w-full text-sm text-blue-600 hover:underline"
+                      onClick={() => {
+                        setForgotMode(!forgotMode);
+                        setResetStage("request");
+                        setResetForm({ code: "", newPassword: "", confirmPassword: "" });
+                        setAuthForm(form => ({ ...form, password: "" }));
+                      }}>
+                      {forgotMode ? "Back to login" : "Forgot password?"}
+                    </button>
+                  )}
+                </div>
+              </Card>
+            </div>
+          </main>
+        </>
+      );
+
+      return (
+        <>
+          <Toast toast={toast} />
+          {(loading || location.loading) && <Loader message={location.loading ? "Checking location..." : busyText} />}
+
+          <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
+            <div className="mx-auto flex h-16 max-w-lg items-center justify-between px-4">
+              <div className="flex items-center gap-2 font-extrabold text-slate-900">
+                <Icons.Check className="text-red-700" /> ISE Check-in
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="hidden text-right sm:block">
+                  <p className="text-sm font-semibold">{currentUser.name}</p>
+                  <p className="text-xs text-slate-400">ID: {currentUser.id}</p>
+                </div>
+                <Avatar user={currentUser} />
+                <button title="Log out" onClick={handleLogout} className="rounded-full bg-slate-50 p-2 text-slate-500 hover:bg-red-50 hover:text-red-600">
+                  <Icons.Logout size={18} />
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <main className="mx-auto max-w-lg px-4 pb-28 pt-5">
+            {activeTab === "attendance" && (
+              <div className="space-y-4">
+                <Card className="p-5">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm text-slate-500">{today}</p>
+                      <p className="mt-1 text-3xl font-bold">{nowTime(clock)}</p>
+                    </div>
+                    <StatusPill {...attendanceStatus} />
+                  </div>
+
+                  <div className="mt-5 rounded-xl bg-slate-50 p-4">
+                    <div className="flex items-start gap-3">
+                      <Icons.Pin className="mt-0.5 text-blue-600" />
+                      <div className="flex-1">
+                        <p className="font-semibold text-slate-800">{location.closest?.name || "Location not verified"}</p>
+                        <p className="text-sm text-slate-500">
+                          {location.distance == null ? (location.error || "Verify location before checking in.") :
+                            `${location.distance} m from location • Limit ${limit} m`}
+                        </p>
+                      </div>
+                    </div>
+                    <Button className="mt-3 py-2.5" variant="ghost" onClick={getLocation}>
+                      Verify Location
+                    </Button>
+                  </div>
+
+                  {late && !checkedIn && !amLeave && !fullDayLeave && (
+                    <label className="mt-4 block">
+                      <span className="mb-1.5 block text-sm font-medium text-orange-700">Late Check-in Reason *</span>
+                      <textarea rows="2" value={lateReason} onChange={event => setLateReason(event.target.value)}
+                        className="w-full rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 outline-none focus:ring-2 focus:ring-orange-400"
+                        placeholder="Please state your reason..." />
+                    </label>
+                  )}
+
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <Button variant="success" onClick={() => handleAttendance("IN")} disabled={(checkedIn && !checkedOut) || fullDayLeave}>Check In</Button>
+                    <Button variant="danger" onClick={() => handleAttendance("OUT")} disabled={!checkedIn || checkedOut}>Check Out</Button>
+                  </div>
+                </Card>
+
+                <Card className="p-5">
+                  <h2 className="mb-4 font-bold">Today Summary</h2>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-xl bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Check In</p>
+                      <p className="mt-1 font-bold">{todayRow?.checkin_time || "-"}</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-3">
+                      <p className="text-xs text-slate-500">Check Out</p>
+                      <p className="mt-1 font-bold">{todayRow?.checkout_time || "-"}</p>
+                    </div>
+                  </div>
+                  {activeLeave && (
+                    <div className="mt-3 rounded-xl bg-violet-50 p-3 text-sm text-violet-700">
+                      Active leave today: <b>{activeLeave.leave_type_name}</b> ({fmtDuration(activeLeave.duration_type)})
+                    </div>
+                  )}
+                </Card>
+
+                <Card className="p-5">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h2 className="flex items-center gap-2 font-bold text-slate-800">
+                      <span className="text-indigo-600">▥</span>
+                      Monthly Attendance
+                    </h2>
+                    <span className="rounded bg-slate-100 px-2 py-1 text-xs text-slate-600">This Month</span>
+                  </div>
+
+                  <ProgressBar label="Late Occurrences" current={monthlyStats.lateCount} max={5} />
+                  <ProgressBar label="Late Minutes" current={monthlyStats.lateMinutes} max={180} />
+
+                  <p className="mt-2 text-center text-xs text-slate-400">
+                    Limits: 5 times / 180 minutes per month
+                  </p>
+                </Card>
+
+                <Card className="p-5">
+                  <h2 className="mb-4 font-bold">Recent Attendance</h2>
+                  <div className="space-y-3">
+                    {logs.slice(0, 7).map((item, index) => (
+                      <div key={`${item.date}-${index}`} className="flex items-center justify-between rounded-xl bg-slate-50 p-3 text-sm">
+                        <div>
+                          <p className="font-semibold">{item.date}</p>
+                          <p className="text-xs text-slate-500">{item.checkin_time || "-"} – {item.checkout_time || "-"}</p>
+                        </div>
+                        <StatusPill text={item.attendance_status || (item.latecheck === "TRUE" ? "LATE" : "RECORDED")}
+                          tone={item.attendance_status === "ABSENT" ? "red" : item.latecheck === "TRUE" ? "orange" : "gray"} />
+                      </div>
+                    ))}
+                    {!logs.length && <p className="text-sm text-slate-400">No attendance records yet.</p>}
+                  </div>
+                </Card>
+              </div>
+            )}
+
+            {activeTab === "leave" && (
+              <div className="space-y-4">
+                <Card className="p-5">
+                  <h2 className="mb-4 flex items-center gap-2 font-bold"><Icons.Calendar className="text-red-700" /> Submit Leave</h2>
+                  <Select label="Leave Type" value={leaveForm.leave_type_code}
+                    onChange={event => setLeaveForm({ ...leaveForm, leave_type_code: event.target.value })}>
+                    {leaveTypes.map(item => <option key={item.leave_type_code} value={item.leave_type_code}>{item.leave_type_name}</option>)}
+                  </Select>
+                  <Select label="Duration" value={leaveForm.duration_type}
+                    onChange={event => setLeaveForm({ ...leaveForm, duration_type: event.target.value })}>
+                    {["FULL_DAY", "AM", "PM", "MULTI_DAY"].map(type => <option key={type} value={type}>{fmtDuration(type)}</option>)}
+                  </Select>
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input label="Start Date" type="date" value={leaveForm.start_date}
+                      onChange={event => setLeaveForm({ ...leaveForm, start_date: event.target.value })} />
+                    <Input label="End Date" type="date" value={leaveForm.end_date}
+                      onChange={event => setLeaveForm({ ...leaveForm, end_date: event.target.value })} />
+                  </div>
+                  <Input label="Reason" value={leaveForm.reason}
+                    onChange={event => setLeaveForm({ ...leaveForm, reason: event.target.value })} placeholder="Reason for leave" />
+                  <Input label="Attachment URL (optional)" value={leaveForm.attachment_url}
+                    onChange={event => setLeaveForm({ ...leaveForm, attachment_url: event.target.value })} placeholder="Google Drive or document link" />
+                  <Input label="Handover Note (optional)" value={leaveForm.handover_note}
+                    onChange={event => setLeaveForm({ ...leaveForm, handover_note: event.target.value })} placeholder="Work handover detail" />
+                  <Button onClick={handleSubmitLeave}>Submit Leave Request</Button>
+                </Card>
+
+                <Card className="p-5">
+                  <h2 className="mb-4 font-bold">My Leave Requests</h2>
+                  <div className="space-y-3">
+                    {myLeaves.map(item => (
+                      <div key={item.leave_id} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                        <div className="flex justify-between gap-3">
+                          <div>
+                            <p className="font-semibold">{item.leave_type_name || item.leave_type_code}</p>
+                            <p className="text-sm text-slate-500">{item.start_date} – {item.end_date} • {fmtDuration(item.duration_type)}</p>
+                          </div>
+                          <StatusPill text={item.record_status || "-"} tone={item.record_status === "ACTIVE" ? "green" : "gray"} />
+                        </div>
+                        <p className="mt-2 text-sm text-slate-600">{item.reason}</p>
+                        {item.record_status === "ACTIVE" && (
+                          <div className="mt-3 grid grid-cols-3 gap-2">
+                            <button onClick={() => leaveAction("generateLeaveForm", item.leave_id, "Generating form...")} className="rounded-lg bg-white px-2 py-2 text-xs font-semibold text-blue-700">Generate</button>
+                            <button onClick={() => leaveAction("sendLeaveToEmail", item.leave_id, "Sending email...")} className="rounded-lg bg-white px-2 py-2 text-xs font-semibold text-blue-700">Email</button>
+                            <button onClick={() => cancelLeave(item.leave_id)} className="rounded-lg bg-white px-2 py-2 text-xs font-semibold text-red-600">Cancel</button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {!myLeaves.length && <p className="text-sm text-slate-400">No leave requests yet.</p>}
+                  </div>
+                </Card>
+              </div>
+            )}
+
+            {activeTab === "rooms" && (
+              <div className="space-y-4">
+                <Card className="p-5">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h2 className="flex items-center gap-2 font-bold">
+                      <Icons.Door className="text-red-700" /> Check Room Availability
+                    </h2>
+                    <input
+                      type="date"
+                      min={today}
+                      value={roomDate}
+                      onChange={event => {
+                        setRoomDate(event.target.value);
+                        setRoomForm({ ...roomForm, book_date: event.target.value });
+                      }}
+                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                    />
+                  </div>
+
+                  <div className="space-y-4">
+                    {ROOMS.map(room => {
+                      const items = roomBookings
+                        .filter(item => item.room_name === room && item.status !== "CANCELLED")
+                        .map(item => ({
+                          ...item,
+                          start_time: normalizeHHMM(item.start_time),
+                          end_time: normalizeHHMM(item.end_time),
+                        }))
+                        .sort((a, b) => (toMinutes(a.start_time) || 0) - (toMinutes(b.start_time) || 0));
+
+                      const totalBooked = items.reduce((sum, item) => {
+                        const start = toMinutes(item.start_time);
+                        const end = toMinutes(item.end_time);
+                        return sum + ((start != null && end != null && end > start) ? end - start : 0);
+                      }, 0);
+
+                      return (
+                        <div key={room} className="rounded-xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4">
+                          <div className="mb-2 flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-semibold text-slate-800">{room}</p>
+                              <p className="mt-1 text-xs text-slate-500">
+                                {items.length === 0
+                                  ? "Free all day"
+                                  : `${items.length} booking${items.length > 1 ? "s" : ""} · ${formatMinutesAsDuration(totalBooked)} reserved`}
+                              </p>
+                            </div>
+                            <StatusPill
+                              text={items.length === 0 ? "Available" : "Partly booked"}
+                              tone={items.length === 0 ? "green" : "orange"}
+                            />
+                          </div>
+
+                          {items.length === 0 ? (
+                            <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-4 text-sm font-medium text-emerald-700">
+                              Available all day
+                            </div>
+                          ) : (
+                            <>
+                              <RoomTimeline items={items} />
+                              <div className="mt-4 space-y-2">
+                                {items.map(booking => (
+                                  <div key={booking.booking_id || `${booking.room_name}-${booking.start_time}`} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                          <span className="text-sm font-bold text-slate-800">
+                                            {formatTimeLabel(booking.start_time)} - {formatTimeLabel(booking.end_time)}
+                                          </span>
+                                          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                                            Booked
+                                          </span>
+                                        </div>
+                                        <p className="mt-2 text-xs text-slate-700">
+                                          <span className="font-semibold">Purpose:</span> {booking.purpose}
+                                        </p>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                          <span className="font-semibold">Note:</span> {booking.note || "-"}
+                                        </p>
+                                        <p className="mt-1 text-xs text-slate-500">by {booking.requester_name}</p>
+                                      </div>
+
+                                      {booking.requester_email === currentUser.email && (
+                                        <button
+                                          onClick={() => cancelRoom(booking.booking_id)}
+                                          className="shrink-0 rounded-lg p-1 text-red-600 hover:bg-red-50 hover:text-red-700"
+                                          title="Cancel booking"
+                                        >
+                                          <Icons.Close size={18} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+
+                <Card className="p-5">
+                  <h2 className="mb-1 flex items-center gap-2 font-bold">
+                    <Icons.Door className="text-red-700" /> Book Meeting Room
+                  </h2>
+                  <p className="mb-4 text-xs text-slate-500">
+                    Choose a room, time and purpose. Overlapping bookings are blocked by the system.
+                  </p>
+
+                  <Select label="Room" value={roomForm.room_name}
+                    onChange={event => setRoomForm({ ...roomForm, room_name: event.target.value })}>
+                    {ROOMS.map(room => <option key={room} value={room}>{room}</option>)}
+                  </Select>
+                  <Input label="Booking Date" type="date" min={today} value={roomForm.book_date}
+                    onChange={event => setRoomForm({ ...roomForm, book_date: event.target.value })} />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Input label="Start" type="time" value={roomForm.start_time}
+                      onChange={event => setRoomForm({ ...roomForm, start_time: event.target.value })} />
+                    <Input label="End" type="time" value={roomForm.end_time}
+                      onChange={event => setRoomForm({ ...roomForm, end_time: event.target.value })} />
+                  </div>
+                  <Input label="Purpose" value={roomForm.purpose}
+                    onChange={event => setRoomForm({ ...roomForm, purpose: event.target.value })} placeholder="Meeting purpose" />
+                  <Input label="Note (optional)" value={roomForm.note}
+                    onChange={event => setRoomForm({ ...roomForm, note: event.target.value })} placeholder="Additional information" />
+                  <Button onClick={handleBookRoom}>Book Room</Button>
+                </Card>
+              </div>
+            )}
+          </main>
+
+          <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white pt-2">
+            <div className="mx-auto grid max-w-lg grid-cols-3 px-3">
+              {[
+                ["attendance", <Icons.Clock size={20} />, "Attendance"],
+                ["leave", <Icons.Calendar size={20} />, "Leave"],
+                ["rooms", <Icons.Door size={20} />, "Rooms"],
+              ].map(([key, icon, label]) => (
+                <button key={key} onClick={() => setActiveTab(key)}
+                  className={`flex flex-col items-center gap-1 rounded-xl py-2 text-xs font-semibold ${activeTab === key ? "text-red-700" : "text-slate-400"}`}>
+                  {icon}{label}
+                </button>
+              ))}
+            </div>
+          </nav>
+        </>
+      );
+    }
+
+    try {
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    } catch (error) {
+      showAppError("Render failed", error && error.message ? error.message : error);
+    }
+  </script>
+</body>
+</html>
